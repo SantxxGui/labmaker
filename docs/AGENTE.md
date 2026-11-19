@@ -19,8 +19,11 @@ node agente/agente.mjs --servidor http://IP-DO-SERVIDOR:3000 --inscricao <CÓDIG
 | Opção | Efeito |
 |---|---|
 | `--nome LM-NB-01` | Usa este nome — **assume o aparelho que o Líder já cadastrou à mão** (mesmo registro, mesmo histórico de empréstimos) |
+| `--permitir-reinicio` | "Reiniciar" reinicia o computador de verdade com 1 minuto de aviso (`shutdown /r /t 60` no Windows); sem isso, o agente recusa |
 | `--permitir-bloqueio` | "Bloquear tela" trava a sessão de verdade **até o Líder liberar**: se o aluno destravar com a senha dele, o agente trava de novo em até 5 s (sem a opção, só registra) |
 | `--aplicar-politica` | Executáveis baixados em `~/Downloads` vão para a quarentena (sem isso, só reporta) |
+
+> As opções ficam **salvas** no computador: já inscrito, basta rodar `node agente.mjs --permitir-bloqueio --permitir-reinicio` uma vez — sem código novo — e das próximas vezes só `node agente.mjs`.
 | `--tipo DESKTOP` | Estação fixa (não entra na lista de empréstimos) |
 | `--uma-vez` | Um check-in e sai (testes) |
 | `--testar-captura` | Tira uma foto da tela e salva `teste-captura.jpg` — confere se o suporte remoto vai funcionar |

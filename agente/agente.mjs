@@ -8,6 +8,7 @@
  *
  * Opções:
  *   --permitir-bloqueio   "Bloquear tela" trava a sessão e volta a travar até o Líder liberar (sem isso, só registra)
+ *   --permitir-reinicio   "Reiniciar" reinicia o computador de verdade, com 1 minuto de aviso (sem isso, recusa)
  *   --aplicar-politica    executáveis baixados em ~/Downloads vão para a quarentena (sem isso, só são reportados)
  *   --nome LM-NB-01       usa este nome (assume o aparelho que o Líder já cadastrou manualmente)
  *   --tipo NOTEBOOK|DESKTOP
@@ -18,7 +19,8 @@
  *   --instalar-servico    o agente passa a iniciar sozinho com o computador + atalho "Pedir ajuda" na área de trabalho
  *   --remover-servico     desfaz o --instalar-servico
  *
- * Por segurança, o agente de demonstração NUNCA reinicia o computador nem apaga dados.
+ * Por segurança, o agente só reinicia com --permitir-reinicio e NUNCA apaga dados.
+ * As opções --permitir-* / --aplicar-politica ficam salvas: da próxima vez basta "node agente.mjs".
  */
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -231,6 +233,16 @@ function alarmeDevolucao(dev, hostname) {
   }
 }
 
+/** Reinicia com 1 minuto de aviso (dá tempo de salvar e de o resultado subir para o servidor). */
+async function reiniciar() {
+  const msg = "O Lider do espaco pediu para reiniciar. Salve seus arquivos.";
+  if (PLATAFORMA === "win32") return (await rodarBruto("shutdown", ["/r", "/t", "60", "/c", msg])).ok;
+  if (PLATAFORMA === "darwin") { setTimeout(() => void rodar("osascript", ["-e", 'tell application "System Events" to restart']), 60_000); return true; }
+  if ((await rodarBruto("shutdown", ["-r", "+1", msg])).ok) return true;
+  setTimeout(() => void rodar("systemctl", ["reboot"]), 60_000); // Mint/Ubuntu: o usuário logado pode reiniciar
+  return true;
+}
+
 async function travarSessao() {
   if (PLATAFORMA === "win32") return rodar("rundll32.exe", ["user32.dll,LockWorkStation"]);
   if (PLATAFORMA === "darwin") return rodar("pmset", ["displaysleepnow"]);
@@ -279,8 +291,14 @@ async function executar(a) {
       void transmitirTela(a.id);
       return ok("Autorizado pelo usuário — compartilhando a tela");
     }
-    case "REINICIAR":
-      return nao("Reinício desativado no agente de demonstração");
+    case "REINICIAR": {
+      if (!flag("permitir-reinicio")) return nao("Reinício desativado: inicie o agente com --permitir-reinicio");
+      const r = await reiniciar();
+      if (!r) return nao("O sistema não deixou reiniciar (falta permissão de administrador?)");
+      caixa("Reinício pedido pelo Líder", ["Este computador reinicia em 1 minuto.", "Salve seus arquivos agora."], cor.amarelo);
+      await notificar("Reinício em 1 minuto", "O Líder do espaço pediu para reiniciar este computador. Salve seus arquivos.");
+      return ok("Reiniciando em 1 minuto");
+    }
     case "APAGAR_DADOS":
       return nao("Apagamento desativado no agente de demonstração");
     default:
@@ -555,7 +573,9 @@ async function instalarServico() {
   const cfg = lerConfig();
   if (!cfg?.token) throw new Error("Inscreva o computador primeiro (--servidor … --inscricao …).");
   // guarda as opções para o início automático usar as mesmas
-  salvarConfig({ ...cfg, opcoes: { "permitir-bloqueio": args.includes("--permitir-bloqueio"), "aplicar-politica": args.includes("--aplicar-politica") } });
+  // soma às opções já salvas (ligar de novo não é preciso; --remover-servico limpa tudo)
+  const agora = ["permitir-bloqueio", "permitir-reinicio", "aplicar-politica"].filter((o) => args.includes(`--${o}`));
+  salvarConfig({ ...cfg, opcoes: { ...cfg.opcoes, ...Object.fromEntries(agora.map((o) => [o, true])) } });
   const node = process.execPath, script = path.resolve(process.argv[1]);
   const { inicio, atalho } = arquivosDoServico();
   fs.mkdirSync(path.dirname(inicio), { recursive: true });
@@ -587,6 +607,7 @@ async function instalarServico() {
   log(cor.verde, "✔ O agente vai iniciar sozinho quando este computador ligar.");
   log(cor.verde, `✔ Atalho criado na área de trabalho: ${path.basename(atalho)}`);
   if (flag("permitir-bloqueio")) log(cor.cinza, "  (com --permitir-bloqueio salvo)");
+  if (flag("permitir-reinicio")) log(cor.cinza, "  (com --permitir-reinicio salvo)");
 }
 
 function removerServico() {
@@ -741,7 +762,12 @@ async function main() {
     console.log(`\nPrimeira vez? Gere o código em ${cor.neg}Notebooks → Adicionar aparelho → Com agente${cor.fim} e rode:\n  node agente.mjs --servidor http://IP:3000 --inscricao <CÓDIGO>\n`);
     process.exit(1);
   }
+  // Opções passadas agora ficam salvas: da próxima vez (ou no início automático) basta "node agente.mjs"
+  const novas = ["permitir-bloqueio", "permitir-reinicio", "aplicar-politica"].filter((o) => args.includes(`--${o}`) && !cfg.opcoes?.[o]);
+  if (novas.length) { cfg.opcoes = { ...cfg.opcoes, ...Object.fromEntries(novas.map((o) => [o, true])) }; salvarConfig(cfg); }
   log(cor.verde, `Conectando a ${cfg.servidor} como ${cfg.hostname}…`);
+  const ligadas = ["permitir-bloqueio", "permitir-reinicio", "aplicar-politica"].filter((o) => cfg.opcoes?.[o]);
+  if (ligadas.length) log(cor.cinza, `  opções ligadas: ${ligadas.map((o) => `--${o}`).join(" ")}`);
   [seguranca] = await Promise.all([lerSeguranca(), coletarLento()]);
   vigiarDownloads();
   setInterval(() => void coletarLento(), 15_000);
