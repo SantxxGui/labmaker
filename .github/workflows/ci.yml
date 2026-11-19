@@ -1,7 +1,7 @@
 # Integração contínua: tipos, testes unitários, build e testes de ponta a ponta contra um PostgreSQL real.
 name: CI
 on:
-  push: { branches: [main] }
+  push: { branches: [main, master] }
   pull_request:
 
 jobs:
