@@ -2,7 +2,7 @@
 
 > Gerado por `npm run docs:api` a partir de `lib/openapi.ts`. Versão navegável e testável em **`/api-docs`**; especificação OpenAPI 3.1 em **`/api/openapi.json`**.
 
-**71 operações.** JSON em UTF-8. Erros sempre como `{ "error": "mensagem em português" }`.
+**72 operações.** JSON em UTF-8. Erros sempre como `{ "error": "mensagem em português" }`.
 
 | Código | Quando |
 |---|---|
@@ -67,6 +67,7 @@ Autenticação: cookie `labops_session` (JWT httpOnly) obtido em `POST /api/auth
 | `GET` | `/api/dispositivos` | Notebooks, estações e tablets com leitura ao vivo | `dispositivo:ver` |
 | `POST` | `/api/dispositivos` | Cadastrar aparelho manualmente (sem agente) | `dispositivo:cadastrar` |
 | `GET` | `/api/dispositivos/{id}` | Detalhe, ações e eventos de um aparelho | `dispositivo:ver` |
+| `DELETE` | `/api/dispositivos/{id}` | Remover aparelho do LabMaker (digitar o nome para confirmar; o agente deixa de valer) | `dispositivo:cadastrar` |
 | `POST` | `/api/dispositivos/{id}/acoes` | Enviar ação remota (fila → entregue → executada) | `dispositivo:comandar` |
 | `GET` | `/api/dispositivos/alertas` | Alertas em massa e confirmações de leitura | `dispositivo:ver` |
 | `POST` | `/api/dispositivos/alertas` | Enviar alerta para todos / uma área / selecionados | `dispositivo:comandar` |
@@ -142,6 +143,6 @@ Autenticação: cookie `labops_session` (JWT httpOnly) obtido em `POST /api/auth
 B=http://localhost:3000
 curl -c c.txt -X POST $B/api/auth/login -H 'Content-Type: application/json' -d '{"email":"lider@labmaker.dev","senha":"labmaker123"}'
 curl -b c.txt $B/api/equipamentos
-npm run test:api           # 105 verificações ponta a ponta
+npm run test:api           # 115 verificações ponta a ponta
 npm run test:concorrencia  # 50 pedidos simultâneos → 1 reserva
 ```

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BatteryMedium, Bell, BellRing, LifeBuoy, Lock, MonitorUp, Send, Smartphone, Sun, Unplug, Wifi, X } from "lucide-react";
+import { AlarmClock, BatteryMedium, Bell, BellRing, LifeBuoy, Lock, MonitorUp, Send, Smartphone, Sun, Unplug, Wifi, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -64,6 +64,28 @@ function bipe() {
   } catch { /* sem som */ }
 }
 
+/** Alarme de devolução: sirene de dois tons, alto, enquanto o aparelho estiver atrasado. */
+function sirene() {
+  try {
+    if (!audio) return;
+    if (audio.state === "suspended") void audio.resume();
+    const t = audio.currentTime;
+    [0, 0.35].forEach((d, i) => {
+      const o = audio!.createOscillator(); const g = audio!.createGain();
+      o.type = "square"; o.frequency.value = i ? 1046 : 1568; g.gain.value = 0.35;
+      o.connect(g).connect(audio!.destination); o.start(t + d); o.stop(t + d + 0.3);
+    });
+  } catch { /* sem som */ }
+}
+/** O som só pode nascer de um toque na tela: qualquer toque na página já libera o alarme. */
+function liberarSom() {
+  try {
+    if (!audio) audio = new AudioContext();
+    if (audio.state === "suspended") void audio.resume();
+  } catch { /* sem Web Audio */ }
+}
+const horaCurta = (d: Date) => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
 const blobParaBase64 = (b: Blob) => new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] ?? ""); r.readAsDataURL(b); });
 
 export function AgenteWeb({ codigoInicial }: { codigoInicial: string }) {
@@ -93,6 +115,9 @@ export function AgenteWeb({ codigoInicial }: { codigoInicial: string }) {
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [push, setPush] = useState<"indisponivel" | "desligado" | "ligado">("indisponivel");
+  /** Empréstimo aberto deste aparelho; desvio = hora do servidor − hora do celular (relógio errado não atrasa o alarme). */
+  const [devolucao, setDevolucao] = useState<{ prazoEm: Date; alarmeEm: Date; desvio: number } | null>(null);
+  const [somLiberado, setSomLiberado] = useState(true);
   const intervalo = useRef(15_000);
   const chatAbertoRef = useRef(false);
   chatAbertoRef.current = chatAberto;
@@ -120,6 +145,27 @@ export function AgenteWeb({ codigoInicial }: { codigoInicial: string }) {
     const t = setInterval(() => setAgora(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Toque em qualquer lugar libera o som (regra dos navegadores) — necessário para o alarme
+  useEffect(() => {
+    const t = () => { liberarSom(); setSomLiberado(audio?.state === "running"); };
+    window.addEventListener("pointerdown", t);
+    return () => window.removeEventListener("pointerdown", t);
+  }, []);
+
+  // Alarme de devolução: começa sozinho em alarmeEm (relógio do servidor) e só para quando o
+  // Líder registra a devolução (o próximo check-in deixa de trazer o empréstimo).
+  const tocando = !!devolucao && agora + devolucao.desvio >= devolucao.alarmeEm.getTime();
+  useEffect(() => {
+    if (!tocando) return;
+    const tocar = () => {
+      sirene(); navigator.vibrate?.([700, 250, 700]);
+      setSomLiberado(audio?.state === "running");
+    };
+    tocar();
+    const t = setInterval(tocar, 1600);
+    return () => { clearInterval(t); navigator.vibrate?.(0); };
+  }, [tocando]);
 
   const resultado = useCallback((r: Resultado) => {
     resultados.current.push(r);
@@ -196,6 +242,7 @@ export function AgenteWeb({ codigoInicial }: { codigoInicial: string }) {
       setOnline(true); setUltimo(new Date());
       setPolitica(j.politica?.nome ?? null);
       setBloqueado(!!j.bloqueado);
+      setDevolucao(j.devolucao ? { prazoEm: new Date(j.devolucao.prazoEm), alarmeEm: new Date(j.devolucao.alarmeEm), desvio: j.agora ? new Date(j.agora).getTime() - Date.now() : 0 } : null);
       intervalo.current = (j.intervaloSeg ?? 15) * 1000;
       setChamado((ant) => {
         if (ant && !j.chamado) setChat([]); // atendimento encerrado: limpa a conversa
@@ -446,6 +493,12 @@ export function AgenteWeb({ codigoInicial }: { codigoInicial: string }) {
                 </p>
               </div>
             </div>
+            {devolucao && !tocando && (
+              <p className="flex items-center gap-2 rounded-xl border border-signal/40 bg-signal/10 px-3 py-2 text-[13px]">
+                <AlarmClock className="size-4 shrink-0 text-signal" />
+                <span>Aparelho emprestado: devolva no balcão até <b>{horaCurta(devolucao.prazoEm)}</b>. Depois disso ele começa a apitar.</span>
+              </p>
+            )}
             <dl className="grid grid-cols-2 gap-3 text-[12.5px]">
               <div className="rounded-xl border border-line px-3 py-2"><dt className="text-subtle">Política</dt><dd className="mt-0.5 truncate text-fg">{politica ?? "—"}</dd></div>
               <div className="rounded-xl border border-line px-3 py-2"><dt className="text-subtle">Usuário</dt><dd className="mt-0.5 truncate text-fg">{cfg.nomeUsuario || "—"}</dd></div>
@@ -561,6 +614,21 @@ export function AgenteWeb({ codigoInicial }: { codigoInicial: string }) {
               <button onClick={() => compartilharTela(false)} className="h-11 rounded-xl border border-line-strong text-[14px]">Recusar</button>
               <button onClick={() => compartilharTela(true)} className="h-11 rounded-xl bg-white text-[14px] font-medium text-zinc-950">Compartilhar</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {tocando && devolucao && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-red-700 p-8 text-center text-white" role="alertdialog" aria-live="assertive">
+          <div className="animate-pulse">
+            <AlarmClock className="mx-auto size-16" />
+            <h2 className="mt-5 text-3xl font-bold tracking-tight">Devolva este aparelho</h2>
+            <p className="mt-3 text-lg">O prazo terminou às {horaCurta(devolucao.prazoEm)}.</p>
+            <p className="mt-1 text-white/85">Leve o {cfg?.hostname} ao balcão do espaço maker. O alarme para quando o Líder registrar a devolução.</p>
+            <p className="mt-6 font-mono text-sm text-white/80">
+              atrasado há {Math.max(1, Math.floor((agora + devolucao.desvio - devolucao.prazoEm.getTime()) / 60_000))} min
+            </p>
+            {!somLiberado && <p className="mt-4 rounded-lg bg-white/15 px-3 py-2 text-sm">Toque na tela para ativar o som</p>}
           </div>
         </div>
       )}

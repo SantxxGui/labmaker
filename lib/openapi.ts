@@ -49,6 +49,7 @@ export const ROTAS: [Metodo, string, Op][] = [
   ["get", "/api/dispositivos", { tag: "Notebooks", resumo: "Notebooks, estações e tablets com leitura ao vivo", perm: "dispositivo:ver" }],
   ["post", "/api/dispositivos", { tag: "Notebooks", resumo: "Cadastrar aparelho manualmente (sem agente)", perm: "dispositivo:cadastrar", corpo: v.dispositivoCreateSchema, respostas: { 201: "Cadastrado", 409: "Hostname ou número de série já existe" } }],
   ["get", "/api/dispositivos/{id}", { tag: "Notebooks", resumo: "Detalhe, ações e eventos de um aparelho", perm: "dispositivo:ver" }],
+  ["delete", "/api/dispositivos/{id}", { tag: "Notebooks", resumo: "Remover aparelho do LabMaker (digitar o nome para confirmar; o agente deixa de valer)", perm: "dispositivo:cadastrar", corpo: v.removerDispositivoSchema, respostas: { 200: "Removido", 422: "Nome não confere ou aparelho emprestado" } }],
   ["post", "/api/dispositivos/{id}/acoes", { tag: "Notebooks", resumo: "Enviar ação remota (fila → entregue → executada)", perm: "dispositivo:comandar", corpo: v.acaoDispositivoSchema }],
   ["get", "/api/dispositivos/alertas", { tag: "Notebooks", resumo: "Alertas em massa e confirmações de leitura", perm: "dispositivo:ver" }],
   ["post", "/api/dispositivos/alertas", { tag: "Notebooks", resumo: "Enviar alerta para todos / uma área / selecionados", perm: "dispositivo:comandar", corpo: v.alertaSchema }],

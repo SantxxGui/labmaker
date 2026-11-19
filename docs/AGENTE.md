@@ -54,6 +54,7 @@ Agente ─ POST /api/agente/checkin (Bearer lmk_…) a cada 15 s
 ```
 
 - Com um **pedido de ajuda aberto**, o servidor devolve `intervaloSeg: 3` — o chat fica quase instantâneo — e volta a 15 s quando o atendimento termina.
+- **Alarme de devolução:** prazo 10:00 → às 10:01 o aparelho emprestado começa a apitar (celular: tela vermelha, sirene e vibração; computador: bipe a cada 3 s) e só para quando o Líder registra a devolução. O check-in traz `devolucao` com a hora do servidor e fica a cada 5 s perto do alarme. Com a página do celular fechada, o agendador insiste por notificação (a cada minuto nos primeiros 15 min, depois a cada 5).
 - O próprio check-in é o **relógio das automações**: lembrete de devolução 15 min antes do prazo, aviso de atraso, trava às 20h (e no domingo) e destrava às 8h. Ver *Automações* abaixo.
 
 - **Pull, não push:** o servidor nunca abre conexão com o notebook; funciona atrás de NAT e firewall de rede de faculdade.

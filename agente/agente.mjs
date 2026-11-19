@@ -208,6 +208,29 @@ function perguntar(pergunta, segundos) {
   });
 }
 
+/** Um toque do alarme de devolução (Windows: bipe do sistema; macOS: som do sistema; Linux: som ou sino do terminal). */
+async function apitar() {
+  if (PLATAFORMA === "win32") return ps("[console]::beep(1568,300); [console]::beep(1046,300); [console]::beep(1568,300)");
+  if (PLATAFORMA === "darwin") return rodar("afplay", ["/System/Library/Sounds/Sosumi.aiff"]);
+  const som = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga";
+  if (fs.existsSync(som) && (await rodar("paplay", [som], 4000)) !== null) return;
+  process.stdout.write("\x07");
+}
+
+let alarme = null; // setInterval do alarme de devolução
+function alarmeDevolucao(dev, hostname) {
+  if (dev?.tocando && !alarme) {
+    const prazo = new Date(dev.prazoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    caixa("⏰ Devolva este computador", [`O prazo terminou às ${prazo}.`, `Leve o ${hostname} ao balcão do espaço maker.`], cor.vermelho);
+    void notificar(`Devolva o ${hostname}`, `O prazo terminou às ${prazo}. O alarme para quando o Líder registrar a devolução.`);
+    void apitar();
+    alarme = setInterval(() => void apitar(), 3000);
+  } else if (!dev?.tocando && alarme) {
+    clearInterval(alarme); alarme = null;
+    log(cor.verde, "✔ Devolução registrada: alarme desligado.");
+  }
+}
+
 async function travarSessao() {
   if (PLATAFORMA === "win32") return rodar("rundll32.exe", ["user32.dll,LockWorkStation"]);
   if (PLATAFORMA === "darwin") return rodar("pmset", ["displaysleepnow"]);
@@ -680,6 +703,7 @@ async function checkin(cfg) {
     await travarSessao();
   }
   bloqueadoAgora = !!r.bloqueado;
+  alarmeDevolucao(r.devolucao, cfg.hostname);
   for (const a of novas) {
     log(cor.azul, `↓ ação recebida: ${a.tipo}${a.titulo ? ` — ${a.titulo}` : a.parametro ? ` — ${a.parametro}` : ""}`);
     resultados.push(await executar(a));

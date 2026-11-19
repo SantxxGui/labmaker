@@ -3,7 +3,8 @@
  * Único ponto de acesso a essas tabelas.
  */
 import "server-only";
-import { LIMITE_OFFLINE_MS, SEM_AGENTE } from "@/lib/agente";
+import { LIMITE_OFFLINE_MS, SEM_AGENTE, nomeRemovido } from "@/lib/agente";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { toAcaoDTO, toDispositivoDTO, toEventoDTO, toPainelDTO, toPoliticaDTO, resumirLotes, type DispositivoRow } from "@/lib/dispositivo-dto";
 import { prisma } from "@/lib/prisma";
 import type { ModoDownload, SeveridadeAlarme, SistemaOperacional, StatusAcao, TipoAcaoDispositivo, TipoDispositivo } from "@/lib/types";
@@ -54,6 +55,34 @@ export const DispositivoModel = {
       select: selectDispositivo,
     });
     return toPainelDTO(r as DispositivoRow, new Date());
+  },
+
+  /** Dados para decidir a remoção (nome atual e se há empréstimo aberto). */
+  async paraRemocao(id: string) {
+    const d = await prisma.dispositivo.findFirst({ where: { id, ativo: true }, select: { id: true, hostname: true, numeroSerie: true, fabricante: true, modelo: true } });
+    if (!d) return null;
+    const emprestimoAberto = !!(await prisma.emprestimo.findFirst({ where: { dispositivoId: id, devolvidoEm: null }, select: { id: true } }));
+    return { ...d, emprestimoAberto };
+  },
+
+  /**
+   * Remove o aparelho: some das listas, o token do agente deixa de valer (a página do celular pede
+   * um QR novo), pedidos de ajuda abertos são cancelados e ações não entregues são recusadas.
+   * Nome e nº de série ganham o sufixo "(removido …)" para poderem ser usados de novo.
+   */
+  remover(id: string, hostname: string, numeroSerie: string) {
+    const agora = new Date();
+    return prisma.$transaction([
+      prisma.dispositivo.update({
+        where: { id },
+        data: {
+          ativo: false, agenteTokenHash: null, pushInscricao: Prisma.DbNull, bloqueado: false, responsavelId: null, enderecoMac: null,
+          hostname: nomeRemovido(hostname, agora), numeroSerie: `${numeroSerie}~removido-${agora.getTime().toString(36)}`,
+        },
+      }),
+      prisma.chamado.updateMany({ where: { dispositivoId: id, status: { in: ["ABERTO", "EM_ATENDIMENTO"] } }, data: { status: "CANCELADO" } }),
+      prisma.acaoDispositivo.updateMany({ where: { dispositivoId: id, status: { in: ["PENDENTE", "ENTREGUE"] } }, data: { status: "RECUSADA", motivo: "Aparelho removido do LabMaker" } }),
+    ]);
   },
 
   existe(hostname: string, numeroSerie: string) {

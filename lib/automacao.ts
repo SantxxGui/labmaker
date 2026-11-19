@@ -35,7 +35,7 @@ export function espacoAberto(agora = new Date()) {
   return !LAB.diasFechados.includes(diaDaSemana(data)) && minutos >= LAB.abertura * 60 && minutos < LAB.fechamento * 60;
 }
 
-const hora = (d: Date) => {
+export const hora = (d: Date) => {
   const l = new Date(d.getTime() - 3 * 3_600_000);
   return `${String(l.getUTCHours()).padStart(2, "0")}:${String(l.getUTCMinutes()).padStart(2, "0")}`;
 };
