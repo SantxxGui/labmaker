@@ -11,6 +11,9 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { INTERVALO_CHECKIN_S, efeitoAcao, eventoDaAcao } from "@/lib/agente";
+import { alarmeDevolucao } from "@/lib/emprestimo";
+
+const CHECKIN_ALARME_S = 5;
 import { ApiError, autorizar, handler, ipDe, json } from "@/lib/api";
 import { assinarInscricao, verificarInscricao } from "@/lib/session";
 import { automacoesDoCheckin } from "@/lib/automacao";
@@ -111,13 +114,20 @@ export const AgenteController = {
 
     const acoes = await AgenteModel.entregarPendentes(d.id);
 
+    // Alarme de devolução: o agente apita sozinho a partir de alarmeEm (usa a hora do servidor)
+    const alarme = ctxAuto.emprestimo ? alarmeDevolucao(ctxAuto.emprestimo) : null;
+    const pertoDoAlarme = !!alarme && (alarme.tocando || alarme.alarmeEm.getTime() - Date.now() < 2 * 60_000);
+
     // Atendimento: mensagens novas do Líder e check-in rápido enquanto houver chamado aberto
     const chamado = await ChamadoModel.aberto(d.id);
     const mensagens = chamado ? await ChamadoModel.entregar(chamado.id) : [];
     return json(
       {
-        intervaloSeg: chamado ? CHECKIN_ATENDIMENTO_S : INTERVALO_CHECKIN_S,
+        // perto do alarme o check-in fica rápido: a devolução no balcão para o som em segundos
+        intervaloSeg: chamado ? CHECKIN_ATENDIMENTO_S : pertoDoAlarme ? CHECKIN_ALARME_S : INTERVALO_CHECKIN_S,
         politica: d.politica, bloqueado: bloqueadoAgora, acoes,
+        agora: new Date(),
+        devolucao: alarme && { prazoEm: alarme.prazoEm, alarmeEm: alarme.alarmeEm, tocando: alarme.tocando },
         chamado: chamado && { id: chamado.id, numero: chamado.numero, status: chamado.status, descricao: chamado.descricao, atendente: chamado.atendidoPor?.nome ?? null },
         mensagens,
       },

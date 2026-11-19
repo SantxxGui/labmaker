@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
@@ -27,6 +28,7 @@ type Props = {
   emprestimos: EmprestimoDTO[];
   podeComandar: boolean;
   podeApagar: boolean;
+  podeRemover: boolean;
 };
 
 type Pedido = { tipo: TipoAcaoDispositivo; parametro?: string };
@@ -47,6 +49,8 @@ export function DispositivoDetalheView(p: Props) {
   }
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [removendo, setRemovendo] = useState(false);
+  const emprestimoAberto = p.emprestimos.find((e) => e.situacao !== "DEVOLVIDO");
   const [notificacao, setNotificacao] = useState<(Notificacao & { chave: string }) | null>(null);
   const [sessaoId, setSessaoId] = useState<string | null>(null);
   const [sessaoEncerrada, setSessaoEncerrada] = useState(false);
@@ -151,6 +155,9 @@ export function DispositivoDetalheView(p: Props) {
             </span>
             {d.agenteReal && p.podeComandar && (
               <Button size="sm" variant="secondary" onClick={conversar} loading={abrindoConversa}><MessageSquare />Conversar</Button>
+            )}
+            {p.podeRemover && (
+              <Button size="sm" variant="ghost" className="text-subtle hover:text-danger" onClick={() => setRemovendo(true)}><Trash2 />Remover</Button>
             )}
           </div>
         </Surgir>
@@ -418,6 +425,8 @@ export function DispositivoDetalheView(p: Props) {
         </Card>
       </div>
 
+      {removendo && <DialogoRemover dispositivo={d} emprestado={!!emprestimoAberto} onFechar={() => setRemovendo(false)} />}
+
       <DialogoAcao
         pedido={pedido}
         dispositivo={d}
@@ -538,6 +547,50 @@ function DialogoAcao({ pedido, dispositivo: d, catalogo, enviando, onFechar, onE
           >
             {t === "APAGAR_DADOS" ? <Eraser /> : t === "REMOVER_APP" ? <PackageX /> : <ShieldCheck />}
             {t === "APAGAR_DADOS" ? "Apagar dados" : "Enviar"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Tirar o aparelho do LabMaker: some das listas e a página do agente para de funcionar. */
+function DialogoRemover({ dispositivo: d, emprestado, onFechar }: { dispositivo: DispositivoPainelDTO; emprestado: boolean; onFechar: () => void }) {
+  const router = useRouter();
+  const [confirmacao, setConfirmacao] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  async function remover() {
+    setEnviando(true);
+    try {
+      const r = await fetch(`/api/dispositivos/${d.id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmacao }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { toast.error(j.error ?? "Não foi possível remover."); return; }
+      toast.success(`${d.hostname} foi removido do LabMaker.`);
+      router.push("/dispositivos");
+      router.refresh();
+    } finally { setEnviando(false); }
+  }
+  return (
+    <Dialog open onOpenChange={(o) => !o && !enviando && onFechar()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Remover {d.hostname}?</DialogTitle>
+          <DialogDescription>
+            Ele sai da lista de aparelhos e {d.agenteReal ? "o agente deste aparelho deixa de funcionar (para voltar, é só conectar de novo com um QR code novo)" : "deixa de aparecer no painel"}.
+            O histórico de empréstimos e a auditoria continuam guardados.
+          </DialogDescription>
+        </DialogHeader>
+        {emprestado ? (
+          <p className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">Este aparelho está emprestado. Registre a devolução antes de remover.</p>
+        ) : (
+          <Field label={`Digite ${d.hostname} para confirmar`} htmlFor="rm-c">
+            <Input id="rm-c" value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} className="font-mono" autoComplete="off" autoFocus />
+          </Field>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onFechar} disabled={enviando}>Cancelar</Button>
+          <Button variant="danger" loading={enviando} disabled={emprestado || confirmacao.trim().toUpperCase() !== d.hostname.toUpperCase()} onClick={remover}>
+            <Trash2 />Remover
           </Button>
         </div>
       </DialogContent>

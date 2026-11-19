@@ -1,11 +1,11 @@
 /** CONTROLLER — Gestão de dispositivos de TI: frota, alertas, ações remotas e políticas */
 import "server-only";
-import { avaliarAcao, efeitoAcao, estaOnline, eventoDaAcao } from "@/lib/agente";
+import { avaliarAcao, avaliarRemocao, efeitoAcao, estaOnline, eventoDaAcao } from "@/lib/agente";
 import { ApiError, autorizar, handler, ipDe, json } from "@/lib/api";
 import { ACAO_DISPOSITIVO_LABEL, MODO_DOWNLOAD_LABEL } from "@/lib/labels";
 import { notificarAparelho } from "@/lib/push";
 import { TelaStore, estadoSessao, telaEventos } from "@/lib/tela-remota";
-import { acaoDispositivoSchema, alertaSchema, dispositivoCreateSchema, politicaPatchSchema } from "@/lib/validators";
+import { acaoDispositivoSchema, alertaSchema, dispositivoCreateSchema, politicaPatchSchema, removerDispositivoSchema } from "@/lib/validators";
 import { AuditoriaModel } from "@/models/auditoria.model";
 import { AcaoDispositivoModel, DispositivoModel, EventoDispositivoModel, PoliticaModel } from "@/models/dispositivo.model";
 
@@ -42,6 +42,24 @@ export const DispositivoController = {
     if (!dispositivo) throw new ApiError(404, "Dispositivo não encontrado.");
     const [acoes, eventos] = await Promise.all([AcaoDispositivoModel.listar(id), EventoDispositivoModel.recentes(30, id)]);
     return json({ dispositivo, acoes, eventos }, semCache);
+  }),
+
+  /** DELETE /api/dispositivos/:id — tira o aparelho do LabMaker (Líder; digitar o nome para confirmar) */
+  remover: handler(async (req: Request, ctx: Ctx) => {
+    const s = await autorizar("dispositivo:cadastrar");
+    const { id } = await ctx.params;
+    const { confirmacao } = removerDispositivoSchema.parse(await req.json().catch(() => ({})));
+    const d = await DispositivoModel.paraRemocao(id);
+    if (!d) throw new ApiError(404, "Dispositivo não encontrado.");
+    const v = avaliarRemocao({ hostname: d.hostname, confirmacao, emprestimoAberto: d.emprestimoAberto });
+    if (!v.ok) throw new ApiError(422, v.motivo);
+    await DispositivoModel.remover(id, d.hostname, d.numeroSerie);
+    TelaStore.encerrar(id, "Aparelho removido do LabMaker");
+    await AuditoriaModel.registrar({
+      autor: s, acao: "dispositivo.removido", entidade: "dispositivo", entidadeId: id, ip: ipDe(req),
+      resumo: `Removeu ${d.hostname} (${d.fabricante} ${d.modelo}, série ${d.numeroSerie}) do LabMaker`,
+    });
+    return json({ ok: true });
   }),
 
   /** GET /api/dispositivos/eventos — feed de eventos de todos os agentes */
@@ -81,7 +99,7 @@ export const DispositivoController = {
       titulo: corpo.titulo || null, mensagem: corpo.mensagem || null, prioridade: corpo.tipo === "ALERTA" ? (corpo.prioridade ?? "INFO") : null,
     });
     // Celular com a página /agente fechada: o aviso também sai como notificação push (se ele se inscreveu)
-    if (corpo.tipo === "ALERTA") void notificarAparelho(id, { titulo: corpo.titulo || "Aviso do Líder", corpo: corpo.mensagem || "", tag: acao.id });
+    if (corpo.tipo === "ALERTA") void notificarAparelho(id, { titulo: corpo.titulo || "Aviso do Líder", corpo: corpo.mensagem || "", tag: acao.id, fixa: true });
 
     // Simulado e online: o "agente" responde em segundos e o efeito é aplicado já.
     // Agente REAL: o efeito só é aplicado quando ele confirmar a execução no próximo check-in.
@@ -113,7 +131,7 @@ export const DispositivoController = {
       usuarioId: s.sub, titulo: a.titulo, mensagem: a.mensagem, prioridade: a.prioridade,
     });
     const online = alvos.filter((d) => estaOnline(d.ultimoContatoEm, new Date(), d.agenteReal)).length;
-    for (const d of alvos) void notificarAparelho(d.id, { titulo: a.titulo, corpo: a.mensagem, tag: lote });
+    for (const d of alvos) void notificarAparelho(d.id, { titulo: a.titulo, corpo: a.mensagem, tag: lote, fixa: true });
 
     await AuditoriaModel.registrar({
       autor: s, acao: "dispositivo.alerta", entidade: "dispositivo", entidadeId: lote, ip: ipDe(req),

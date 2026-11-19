@@ -128,6 +128,7 @@ async function main() {
   await lider.post(`/api/chamados/${ini.json!.chamado.id}/resolver`);
 
   // ── Automação: lembrete de devolução 15 min antes (o check-in é o relógio)
+  const cka4 = (r: { json?: { devolucao?: { tocando?: boolean; alarmeEm?: string } } | null }) => r.json?.devolucao?.tocando === false && !!r.json?.devolucao?.alarmeEm;
   const empAg = await lider.post("/api/emprestimos", { dispositivoId: agId, usuarioId: alunoId, prazoEm: new Date(Date.now() + 20 * 60_000).toISOString() });
   confere("Líder empresta o notebook com agente", empAg.status === 201, empAg.json?.error);
   confere("antes dos 15 min, nenhum lembrete", !((await checkin()).json?.acoes ?? []).some((x: { parametro?: string }) => x.parametro?.startsWith("auto:lembrete")));
@@ -140,8 +141,16 @@ async function main() {
   confere("o lembrete não se repete", !((await checkin([{ id: lembrete.id, status: "EXECUTADA", motivo: "Lido" }])).json?.acoes ?? []).some((x: { parametro?: string }) => x.parametro?.startsWith("auto:lembrete")));
   const duplicada = await prisma.acaoDispositivo.create({ data: { dispositivoId: agId, tipo: "ALERTA", parametro: lembrete.parametro, titulo: "Duplicado", mensagem: "x", prioridade: "AVISO" } }).then(() => "criou", (e: { code?: string }) => e.code);
   confere("banco recusa automação duplicada (check-in x agendador)", duplicada === "P2002", String(duplicada));
+  confere("check-in avisa o prazo da devolução (ainda sem tocar)", cka4(await checkin()));
+  // prazo 10:00 → apita às 10:01: o prazo vira "61 s atrás"
+  await prisma.emprestimo.update({ where: { id: empAg.json!.emprestimo.id }, data: { retiradoEm: new Date(Date.now() - 30 * 60_000), prazoEm: new Date(Date.now() - 61_000) } });
+  const tocando = await checkin();
+  confere("1 min depois do prazo o alarme toca e o check-in acelera (5 s)", tocando.json?.devolucao?.tocando === true && tocando.json?.intervaloSeg === 5);
+  confere("aparelho emprestado NÃO pode ser removido", (await lider.req("DELETE", `/api/dispositivos/${agId}`, { confirmacao: (await lider.get(`/api/dispositivos/${agId}`)).json?.dispositivo?.hostname })).status === 422);
   await lider.post(`/api/emprestimos/${empAg.json!.emprestimo.id}/devolver`);
+  confere("devolução registrada desliga o alarme", !(await checkin()).json?.devolucao);
   await prisma.$disconnect();
+
 
   // ── Sistema: diagnóstico, endereços, teste de fechamento, push
   const tv = await lider.get("/api/tv");
@@ -222,6 +231,21 @@ async function main() {
   const csv = await fetch(`${BASE}/api/auditoria/exportar`, { headers: { Cookie: lider.cookie } });
   confere("auditoria exporta CSV", csv.status === 200 && (csv.headers.get("content-type") ?? "").includes("text/csv"));
 
+
+  // ── Remover aparelho: some da lista, o token do agente deixa de valer, o nome fica livre
+  const nomeAg = (await lider.get(`/api/dispositivos/${agId}`)).json?.dispositivo?.hostname as string;
+  const emailOutro = `outro.${unico()}@teste.dev`;
+  await new Cliente("x").post("/api/auth/cadastro", { nome: "Outro aluno", email: emailOutro, senha: SENHA });
+  const outroAluno = new Cliente("outro");
+  await outroAluno.post("/api/auth/login", { email: emailOutro, senha: SENHA });
+  confere("aluno NÃO remove aparelho", (await outroAluno.req("DELETE", `/api/dispositivos/${agId}`, { confirmacao: nomeAg })).status === 403);
+  confere("nome errado na confirmação → 422", (await lider.req("DELETE", `/api/dispositivos/${agId}`, { confirmacao: "OUTRO" })).status === 422);
+  confere("Líder remove o aparelho", (await lider.req("DELETE", `/api/dispositivos/${agId}`, { confirmacao: nomeAg })).status === 200);
+  confere("aparelho removido some do detalhe e da lista", (await lider.get(`/api/dispositivos/${agId}`)).status === 404
+    && !((await lider.get("/api/dispositivos")).json?.dispositivos ?? []).some((x: { id: string }) => x.id === agId));
+  confere("o agente do aparelho removido é desconectado (401)", (await checkin()).status === 401);
+  confere("remoção fica na auditoria", ((await lider.get("/api/auditoria?entidade=dispositivo")).json?.registros ?? [])
+    .some((r: { acao: string }) => r.acao === "dispositivo.removido"));
   resumo();
 }
 

@@ -29,6 +29,7 @@ export default async function DispositivoPage({ params }: { params: Promise<{ id
       politica={politicas.find((p) => p.id === dispositivo.politica?.id) ?? null}
       podeComandar={can(session.role, "dispositivo:comandar")}
       podeApagar={can(session.role, "dispositivo:apagar")}
+      podeRemover={can(session.role, "dispositivo:cadastrar")}
     />
   );
 }

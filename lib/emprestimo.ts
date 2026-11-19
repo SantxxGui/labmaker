@@ -15,6 +15,25 @@ export function situacaoEmprestimo(e: { prazoEm: Date | string; devolvidoEm: Dat
   return new Date(e.prazoEm).getTime() < agora.getTime() ? "ATRASADO" : "ABERTO";
 }
 
+/** O alarme de devolução começa 1 minuto depois do prazo (prazo 10:00 → apita às 10:01). */
+export const TOLERANCIA_ALARME_MIN = 1;
+
+/** Estado do alarme do aparelho emprestado: quando começa e se já está tocando. */
+export function alarmeDevolucao(e: { prazoEm: Date | string }, agora = new Date()) {
+  const prazoEm = new Date(e.prazoEm);
+  const alarmeEm = new Date(prazoEm.getTime() + TOLERANCIA_ALARME_MIN * MIN);
+  return { prazoEm, alarmeEm, tocando: agora.getTime() >= alarmeEm.getTime() };
+}
+
+/**
+ * Com a página fechada, o servidor insiste por notificação: a cada minuto nos primeiros 15 min
+ * de alarme e depois a cada 5 min, até o Líder registrar a devolução.
+ */
+export function repetirNotificacaoAlarme(alarmeEm: Date, agora = new Date()) {
+  const m = Math.floor((agora.getTime() - alarmeEm.getTime()) / MIN);
+  return m >= 0 && (m < 15 || m % 5 === 0);
+}
+
 export function avaliarEmprestimo(c: {
   dispositivo: { tipo: TipoDispositivo; ativo: boolean; bloqueado: boolean; emprestado: boolean };
   aluno: { ativo: boolean; abertos: number };

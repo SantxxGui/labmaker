@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  APP_AGENTE, avaliarAcao, avaliarConformidade, downloadPermitido, efeitoAcao, estaOnline, lerDispositivo, statusEfetivo, type ContextoAcao,
+  APP_AGENTE, avaliarAcao, avaliarConformidade, avaliarRemocao, nomeRemovido, downloadPermitido, efeitoAcao, estaOnline, lerDispositivo, statusEfetivo, type ContextoAcao,
 } from "@/lib/agente";
 import { resumirLotes } from "@/lib/dispositivo-dto";
 import type { AcaoDispositivoDTO } from "@/lib/types";
@@ -119,5 +119,16 @@ describe("downloads e lotes", () => {
     }) as AcaoDispositivoDTO;
     const [l] = resumirLotes([a("EXECUTADA"), a("EXECUTADA"), a("ENTREGUE"), a("PENDENTE")]);
     expect(l).toMatchObject({ total: 4, lidos: 2, entregues: 1, pendentes: 1 });
+  });
+});
+
+describe("remover aparelho", () => {
+  it("exige o nome digitado e nada de empréstimo aberto", () => {
+    expect(avaliarRemocao({ hostname: "CEL-ANA", confirmacao: "cel-ana ", emprestimoAberto: false })).toEqual({ ok: true });
+    expect(avaliarRemocao({ hostname: "CEL-ANA", confirmacao: "CEL-AN", emprestimoAberto: false }).ok).toBe(false);
+    expect(avaliarRemocao({ hostname: "CEL-ANA", confirmacao: "CEL-ANA", emprestimoAberto: true })).toMatchObject({ ok: false, motivo: expect.stringContaining("devolução") });
+  });
+  it("libera o nome com a data da remoção no horário de Brasília", () => {
+    expect(nomeRemovido("CEL-ANA", new Date("2026-11-19T12:30:00Z"))).toBe("CEL-ANA (removido 19/11 09:30)");
   });
 });

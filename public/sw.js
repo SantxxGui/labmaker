@@ -15,7 +15,10 @@ self.addEventListener("push", (e) => {
       renotify: true,
       icon: "/icones/icone-192.png",
       badge: "/icones/icone-192.png",
-      vibrate: [250, 120, 250],
+      // alarme de devolução: vibra longo e fica na tela até a pessoa mexer
+      vibrate: d.alarme ? [900, 300, 900, 300, 900, 300, 900] : [250, 120, 250],
+      // avisos do Líder e alarme ficam presos na tela até a pessoa tocar (abre o aviso em tela cheia)
+      requireInteraction: !!(d.alarme || d.fixa),
       data: { url: "/agente" },
     }),
   );

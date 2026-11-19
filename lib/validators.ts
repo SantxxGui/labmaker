@@ -203,6 +203,8 @@ export const agenteCheckinSchema = z.object({
 
 // ───────────────────────── Empréstimos ─────────────────────────
 
+export const removerDispositivoSchema = z.object({ confirmacao: z.string().trim().max(80) });
+
 export const emprestimoSchema = z.object({
   dispositivoId: z.string().min(1, "Escolha o aparelho."),
   usuarioId: z.string().min(1, "Escolha o aluno."),

@@ -28,7 +28,7 @@ export async function chavesVapid() {
  * Manda uma notificação para o aparelho, se ele tiver inscrição push. Nunca derruba quem chamou:
  * sem inscrição, sem internet ou inscrição vencida (o banco é limpo) → só registra no log.
  */
-export async function notificarAparelho(dispositivoId: string, n: { titulo: string; corpo: string; tag?: string }) {
+export async function notificarAparelho(dispositivoId: string, n: { titulo: string; corpo: string; tag?: string; alarme?: boolean; fixa?: boolean }) {
   try {
     const d = await prisma.dispositivo.findUnique({ where: { id: dispositivoId }, select: { pushInscricao: true } });
     if (!d?.pushInscricao) return false;

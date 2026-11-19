@@ -1,6 +1,7 @@
 import { AgenteModel } from "@/models/agente.model";
 import { AuditoriaModel } from "@/models/auditoria.model";
-import { automacoesDoCheckin } from "@/lib/automacao";
+import { automacoesDoCheckin, hora } from "@/lib/automacao";
+import { alarmeDevolucao, repetirNotificacaoAlarme } from "@/lib/emprestimo";
 import { notificarAparelho } from "@/lib/push";
 
 /**
@@ -21,7 +22,18 @@ export async function varrerAutomacoes(agora = new Date()) {
       if (!acao) continue;
       criadas++;
       await AuditoriaModel.registrar({ autor: null, acao: "dispositivo.automacao", entidade: "dispositivo", entidadeId: d.id, ip: null, resumo: `${resumo} (agendador)` });
-      await notificarAparelho(d.id, { titulo: a.titulo ?? "LabMaker", corpo: a.mensagem ?? "", tag: acao.id });
+      await notificarAparelho(d.id, { titulo: a.titulo ?? "LabMaker", corpo: a.mensagem ?? "", tag: acao.id, fixa: true });
+    }
+    // Alarme de devolução com a página fechada: notificação que vibra e insiste até a devolução
+    if (ctx.emprestimo) {
+      const al = alarmeDevolucao(ctx.emprestimo, agora);
+      if (al.tocando && repetirNotificacaoAlarme(al.alarmeEm, agora)) {
+        await notificarAparelho(d.id, {
+          titulo: `⏰ Devolva o ${d.hostname}`,
+          corpo: `O prazo terminou às ${hora(al.prazoEm)}. Leve o aparelho ao balcão do espaço maker.`,
+          tag: `alarme:${ctx.emprestimo.id}`, alarme: true,
+        });
+      }
     }
   }
   return criadas;

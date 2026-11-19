@@ -358,3 +358,20 @@ export function eventoDaAcao(tipo: TipoAcaoDispositivo, parametro?: string | nul
     default: return null;
   }
 }
+
+/**
+ * Remover um aparelho do LabMaker (celular trocado, notebook vendido…). O registro fica guardado
+ * como inativo para a auditoria e o histórico de empréstimos continuarem mostrando o nome.
+ */
+export function avaliarRemocao(c: { hostname: string; confirmacao: string; emprestimoAberto: boolean }): { ok: true } | { ok: false; motivo: string } {
+  if (c.emprestimoAberto) return { ok: false, motivo: "Este aparelho está emprestado: registre a devolução antes de remover." };
+  if (c.confirmacao.trim().toUpperCase() !== c.hostname.toUpperCase()) return { ok: false, motivo: `Digite ${c.hostname} para confirmar.` };
+  return { ok: true };
+}
+
+/** Libera o nome e o nº de série para um aparelho novo: "CEL-ANA" → "CEL-ANA (removido 19/11 09:30)". */
+export function nomeRemovido(hostname: string, agora = new Date()) {
+  const l = new Date(agora.getTime() - 3 * 3_600_000); // horário de Brasília
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${hostname} (removido ${p(l.getUTCDate())}/${p(l.getUTCMonth() + 1)} ${p(l.getUTCHours())}:${p(l.getUTCMinutes())})`;
+}

@@ -7,13 +7,13 @@ A aplicação **nasce zerada**: nenhuma máquina, área, notebook ou reserva —
 | | |
 |---|---|
 | **Frontend** | Next.js 16 (App Router) · React 19 · TypeScript estrito · Tailwind CSS 4 · Radix UI · framer-motion |
-| **Backend** | API REST (71 operações) em Route Handlers · **MVC** · validação Zod · OpenAPI 3.1 gerada dos próprios validadores |
+| **Backend** | API REST (72 operações) em Route Handlers · **MVC** · validação Zod · OpenAPI 3.1 gerada dos próprios validadores |
 | **Banco** | PostgreSQL · Prisma 7 · 18 tabelas · 8 migrations · regras críticas garantidas no banco (trava, índice único parcial, gatilho) |
 | **Segurança** | JWT em cookie httpOnly · bcrypt · revogação imediata de sessão · limite de tentativas de login · CSP e cabeçalhos · RBAC com 3 perfis · auditoria imutável no banco |
 | **Máquinas** | Telemetria, alarmes, câmera e comandos seguros via gateway (simulado; mesmo formato do real) |
 | **Notebooks e celulares** | **Agente real** (`agente/agente.mjs`, Node sem dependências): métricas, avisos nativos, bloqueio e **suporte remoto com a tela ao vivo** (com autorização e aviso fixo na tela) · inicia com o computador · **agente pelo navegador** para celulares (QR code, instalável como app, notificação push) · empréstimo com prazo |
-| **Atendimento** | Aluno toca em **Pedir ajuda** (notebook ou celular) → fila do Líder com **chat** e tela pré-autorizada · lembrete de devolução 15 min antes e aviso de atraso automáticos · espaço **trava sozinho às 20h** e destrava às 8h |
-| **Qualidade** | 91 testes unitários · 105 verificações ponta a ponta · teste de concorrência (50 pedidos simultâneos → 1 reserva) · CI no GitHub Actions · Docker |
+| **Atendimento** | Aluno toca em **Pedir ajuda** (notebook ou celular) → fila do Líder com **chat** e tela pré-autorizada · lembrete de devolução 15 min antes, aviso de atraso e **alarme que apita 1 min depois do prazo** até a devolução · espaço **trava sozinho às 20h** e destrava às 8h |
+| **Qualidade** | 95 testes unitários · 115 verificações ponta a ponta · teste de concorrência (50 pedidos simultâneos → 1 reserva) · CI no GitHub Actions · Docker |
 
 ## Como rodar
 
@@ -73,8 +73,8 @@ Passo a passo da demonstração com **VM e celular**: [`docs/DEMO-VM-CELULAR.md`
 | `npm run db:reset` | Apaga, recria (migrations) e cria o espaço **zerado** |
 | `npm run db:demo` | Igual, mas com o espaço de **exemplo** |
 | `npm run db:setup` | Prepara o banco **só se estiver vazio** (deploy/Docker) |
-| `npm test` | 91 testes unitários das regras de negócio |
-| `npm run test:api` | 105 verificações ponta a ponta contra o servidor rodando |
+| `npm test` | 95 testes unitários das regras de negócio |
+| `npm run test:api` | 115 verificações ponta a ponta contra o servidor rodando |
 | `npm run test:concorrencia` | 5 alunos × 10 pedidos simultâneos no mesmo horário → exatamente 1 reserva |
 | `npm run typecheck` | Checagem de tipos |
 | `npm run agente -- --servidor … --inscricao …` | Roda o agente neste computador |
@@ -108,7 +108,7 @@ docs/               Documentação detalhada
 ## Documentação
 
 - [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) — camadas, fluxo de uma requisição, decisões técnicas
-- [`docs/API.md`](docs/API.md) — as 67 operações (também em `/api-docs` e `/api/openapi.json`)
+- [`docs/API.md`](docs/API.md) — as 72 operações (também em `/api-docs` e `/api/openapi.json`)
 - [`docs/BANCO.md`](docs/BANCO.md) — modelo de dados, migrations, garantias no banco
 - [`docs/SEGURANCA.md`](docs/SEGURANCA.md) — autenticação, sessões, RBAC, auditoria, LGPD
 - [`docs/AGENTE.md`](docs/AGENTE.md) — agente real e agente pelo navegador: inscrição, check-in, ações, suporte remoto
