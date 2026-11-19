@@ -17,7 +17,13 @@ async function main() {
       const { rows } = await db.query("SELECT to_regclass('public.usuarios') IS NOT NULL AS existe, to_regclass('public.config_sistema') IS NOT NULL AS atual");
       await db.end();
       if (rows[0].existe && !rows[0].atual) {
-        throw Object.assign(new Error("O banco tem tabelas de uma versão antiga do LabMaker.\n  → No seu PC, com o .env apontando para este banco, rode: npm run db:reset (apaga e recria as 18 tabelas)."), { definitivo: true });
+        // Só recria com a opção ligada — e só porque a versão antiga não funciona com este código.
+        // Um banco atualizado nunca chega aqui: ligar a opção e esquecer ligada é seguro.
+        if (process.env.RECRIAR_BANCO_ANTIGO === "sim") {
+          console.log("→ Banco de versão antiga e RECRIAR_BANCO_ANTIGO=sim: recriando as tabelas e a conta do Líder…");
+          return recriar();
+        }
+        throw Object.assign(new Error("O banco tem tabelas de uma versão antiga do LabMaker.\n  → Para recriar pelo Render: Environment → RECRIAR_BANCO_ANTIGO = sim (e LIDER_NOME / LIDER_SENHA da sua conta) → Save, rebuild, and deploy.\n  → Ou no seu PC, com o .env apontando para este banco: npm run db:reset."), { definitivo: true });
       }
       if (rows[0].existe) return console.log("✔ Banco já preparado — nada a fazer.");
       break;
@@ -39,6 +45,11 @@ async function main() {
     }
   }
   console.log("→ Banco vazio: aplicando migrations e criando o espaço…");
+  recriar();
+}
+
+/** Apaga as tabelas do LabMaker, aplica as migrations e cria a conta do Líder (LIDER_NOME, LIDER_SENHA…). */
+function recriar() {
   const r = spawnSync("npx", ["tsx", "scripts/db-reset.ts", ...(process.argv.includes("--demo") ? ["--demo"] : [])], { stdio: "inherit" });
   process.exit(r.status ?? 1);
 }
