@@ -1,0 +1,130 @@
+erDiagram
+  unidades ||--o{ laboratorios : possui
+  laboratorios ||--o{ equipamentos : abriga
+  laboratorios |o--o{ dispositivos : "fica em"
+  equipamentos ||--o{ agendamentos : "é reservado em"
+  usuarios ||--o{ agendamentos : faz
+  equipamentos ||--o{ manutencoes : recebe
+  usuarios ||--o{ manutencoes : executa
+  equipamentos ||--o{ alarmes : dispara
+  usuarios |o--o{ alarmes : reconhece
+  equipamentos ||--o{ comandos_remotos : recebe
+  usuarios ||--o{ comandos_remotos : envia
+  politicas_dispositivo |o--o{ dispositivos : aplica
+  usuarios |o--o{ dispositivos : "está com"
+  dispositivos ||--o{ acoes_dispositivo : recebe
+  usuarios |o--o{ acoes_dispositivo : "envia (null = sistema)"
+  dispositivos ||--o{ eventos_dispositivo : reporta
+  dispositivos ||--o{ emprestimos : "é emprestado em"
+  usuarios ||--o{ emprestimos : "leva (aluno)"
+  usuarios |o--o{ auditoria : autor
+  dispositivos ||--o{ chamados : "pede ajuda"
+  usuarios |o--o{ chamados : atende
+  chamados ||--o{ mensagens_suporte : conversa
+
+  unidades { text id PK
+    text sigla UK
+    text nome }
+  laboratorios { text id PK
+    text codigo UK
+    text nome
+    text unidade_id FK }
+  equipamentos { text id PK
+    text nome
+    TipoEquipamento tipo
+    StatusEquipamento status
+    timestamptz proxima_calibracao_em
+    text endereco_ip "unico entre ativos"
+    ProtocoloIndustrial protocolo
+    EstadoMaquina estado_maquina
+    text laboratorio_id FK }
+  usuarios { text id PK
+    text email UK
+    text senha_hash
+    Role role "LIDER GESTOR USUARIO"
+    int sessao_versao }
+  agendamentos { text id PK
+    timestamptz inicio
+    timestamptz fim
+    StatusAgendamento status
+    text usuario_id FK
+    text equipamento_id FK }
+  manutencoes { text id PK
+    TipoManutencao tipo
+    timestamptz validade_ate
+    text equipamento_id FK
+    text responsavel_id FK }
+  alarmes { text id PK
+    text codigo
+    SeveridadeAlarme severidade
+    timestamptz encerrado_em
+    text equipamento_id FK }
+  comandos_remotos { text id PK
+    TipoComando tipo
+    StatusComando status
+    text equipamento_id FK
+    text usuario_id FK }
+  politicas_dispositivo { text id PK
+    text nome UK
+    boolean bloquear_usb
+    ModoDownload modo_download
+    text_array sites_bloqueados
+    text_array apps_bloqueados
+    boolean bloquear_fora_horario }
+  dispositivos { text id PK
+    text hostname UK
+    TipoDispositivo tipo
+    SistemaOperacional so
+    text endereco_ip
+    boolean bloqueado
+    text_array apps_instalados
+    timestamptz ultimo_contato_em
+    boolean agente_real
+    text agente_token_hash UK
+    jsonb telemetria
+    jsonb push_inscricao
+    text politica_id FK
+    text responsavel_id FK
+    text laboratorio_id FK }
+  acoes_dispositivo { text id PK
+    TipoAcaoDispositivo tipo
+    StatusAcao status
+    text lote
+    text titulo
+    text dispositivo_id FK
+    text usuario_id FK }
+  eventos_dispositivo { text id PK
+    text tipo
+    SeveridadeAlarme severidade
+    text dispositivo_id FK }
+  auditoria { text id PK
+    timestamptz criado_em
+    text acao
+    text resumo
+    text usuario_id FK }
+  emprestimos { text id PK
+    timestamptz retirado_em
+    timestamptz prazo_em
+    timestamptz devolvido_em "null = aberto"
+    text dispositivo_id FK "1 aberto por aparelho"
+    text usuario_id FK
+    text tecnico_id FK }
+  tentativas_login { text id PK
+    text email
+    text ip
+    boolean sucesso
+    timestamptz criado_em }
+  chamados { text id PK
+    serial numero UK
+    text descricao
+    boolean autoriza_tela
+    StatusChamado status "1 aberto por aparelho"
+    text dispositivo_id FK
+    text atendido_por_id FK }
+  mensagens_suporte { text id PK
+    AutorMensagem autor
+    text texto
+    timestamptz entregue_em
+    text chamado_id FK }
+  config_sistema { text chave PK
+    text valor }

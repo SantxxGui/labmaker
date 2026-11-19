@@ -1,0 +1,21 @@
+# Deploy no Render (plano grátis) — Dashboard → New → Blueprint → escolha este repositório.
+# O Render constrói o Dockerfile e publica em https://<nome>.onrender.com (HTTPS automático).
+# Passo a passo completo: docs/DEPLOY.md
+services:
+  - type: web
+    name: labmaker
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: DATABASE_URL # Supabase → Connect → Session pooler (porta 5432), com a senha no lugar de [YOUR-PASSWORD]
+        sync: false
+      - key: AUTH_SECRET # assinatura das sessões: o Render gera um valor aleatório
+        generateValue: true
+      - key: LIDER_SENHA # senha do Líder criada no primeiro start (se o banco estiver vazio)
+        sync: false

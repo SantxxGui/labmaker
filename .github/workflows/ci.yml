@@ -1,0 +1,41 @@
+# Integração contínua: tipos, testes unitários, build e testes de ponta a ponta contra um PostgreSQL real.
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  qualidade:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_DB: labmaker, POSTGRES_USER: labmaker, POSTGRES_PASSWORD: labmaker }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U labmaker" --health-interval 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://labmaker:labmaker@localhost:5432/labmaker
+      AUTH_SECRET: ci-segredo-de-teste-com-mais-de-32-caracteres
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Tipos (TypeScript estrito)
+        run: npm run typecheck
+      - name: Testes unitários (regras de negócio puras)
+        run: npm test
+      - name: Banco do zero (migrations + seed zerado)
+        run: npm run db:reset
+      - name: Build de produção
+        run: npm run build
+      - name: Sobe o servidor
+        run: |
+          npm start &
+          npx --yes wait-on http://localhost:3000/api/health --timeout 60000
+      - name: Ponta a ponta (perfis, regra do Líder, agente, sessão, força bruta)
+        run: npm run test:api
+      - name: Concorrência (50 pedidos simultâneos → 1 reserva)
+        run: npm run test:concorrencia

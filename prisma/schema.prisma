@@ -1,0 +1,592 @@
+// ─────────────────────────────────────────────────────────────────────
+//  LabOps — Schema Prisma (PostgreSQL)
+//
+//  Hierarquia de ativos:   Unidade 1─N Laboratorio 1─N Equipamento
+//  Operação:               Usuario 1─N Agendamento N─1 Equipamento
+//  Conformidade:           Equipamento 1─N Manutencao N─1 Usuario (responsável)
+//  Conectividade:          Equipamento 1─N Alarme · Equipamento 1─N ComandoRemoto
+//  Dispositivos (TI):      PoliticaDispositivo 1─N Dispositivo 1─N AcaoDispositivo / EventoDispositivo
+//  Empréstimos:            Dispositivo 1─N Emprestimo N─1 Usuario (aluno)
+//  Segurança:              TentativaLogin (limite de tentativas) · Usuario.sessaoVersao (revogação)
+//  Governança:             RegistroAuditoria (trilha imutável de ações)
+// ─────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Perfis de acesso (RBAC). A matriz de permissões fica em lib/permissions.ts
+enum Role {
+  /// Líder do espaço: OED (Orientador Educacional Digital) ou Estagiário EMK — cuida de tudo
+  LIDER
+  /// Professor(a): acompanha, reserva para turmas, pausa máquinas e envia avisos
+  GESTOR
+  /// Aluno(a): consulta e reserva
+  USUARIO
+}
+
+enum TipoEquipamento {
+  METROLOGIA
+  ENSAIO_MATERIAIS
+  ANALISE_QUIMICA
+  ELETRONICA
+  MANUFATURA_ADITIVA
+  USINAGEM_CNC
+  CORTE_LASER
+  CAMARA_CLIMATICA
+  PLOTTER_RECORTE
+  OUTRO
+}
+
+enum StatusEquipamento {
+  LIVRE
+  EM_USO
+  MANUTENCAO
+}
+
+enum Criticidade {
+  BAIXA
+  MEDIA
+  ALTA
+}
+
+enum StatusAgendamento {
+  CONFIRMADO
+  CANCELADO
+  CONCLUIDO
+}
+
+/// Estado físico reportado pela máquina (telemetria) — independente do status de reserva
+enum EstadoMaquina {
+  OPERANDO
+  OCIOSO
+  PAUSADO
+  ALARME
+  OFFLINE
+}
+
+/// Protocolo do gateway industrial que conversa com a máquina
+enum ProtocoloIndustrial {
+  OPC_UA
+  MTCONNECT
+  MODBUS_TCP
+  MQTT
+  SCPI
+}
+
+enum SeveridadeAlarme {
+  INFO
+  AVISO
+  CRITICO
+}
+
+enum TipoComando {
+  PAUSAR
+  RETOMAR
+  PARAR_CICLO
+  RECONHECER_ALARMES
+}
+
+enum StatusComando {
+  EXECUTADO
+  REJEITADO
+}
+
+enum TipoDispositivo {
+  NOTEBOOK
+  DESKTOP
+  TABLET
+  SMARTPHONE
+}
+
+enum SistemaOperacional {
+  WINDOWS
+  MACOS
+  LINUX
+  ANDROID
+  IOS
+  CHROMEOS
+}
+
+/// Controle de downloads aplicado pelo agente
+enum ModoDownload {
+  LIVRE
+  BLOQUEAR_EXECUTAVEIS
+  SOMENTE_APROVADOS
+}
+
+/// Ações que o TI envia ao agente instalado no dispositivo
+enum TipoAcaoDispositivo {
+  ALERTA
+  BLOQUEAR
+  DESBLOQUEAR
+  REINICIAR
+  INSTALAR_APP
+  REMOVER_APP
+  SESSAO_REMOTA
+  SINCRONIZAR
+  APAGAR_DADOS
+}
+
+/// Ciclo de vida de uma ação: fica PENDENTE até o agente fazer check-in
+enum StatusAcao {
+  PENDENTE
+  ENTREGUE
+  EXECUTADA
+  RECUSADA
+}
+
+enum TipoManutencao {
+  CALIBRACAO
+  PREVENTIVA
+  CORRETIVA
+}
+
+/// Planta / site da empresa
+model Unidade {
+  id       String   @id @default(cuid())
+  nome     String
+  sigla    String   @unique
+  cidade   String
+  uf       String   @db.Char(2)
+  ativo    Boolean  @default(true)
+  criadoEm DateTime @default(now()) @map("criado_em")
+
+  laboratorios Laboratorio[]
+
+  @@map("unidades")
+}
+
+model Laboratorio {
+  id        String   @id @default(cuid())
+  nome      String
+  codigo    String   @unique
+  descricao String?
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  unidadeId String  @map("unidade_id")
+  unidade   Unidade @relation(fields: [unidadeId], references: [id], onDelete: Restrict)
+
+  equipamentos Equipamento[]
+  dispositivos Dispositivo[]
+
+  @@index([unidadeId])
+  @@map("laboratorios")
+}
+
+model Usuario {
+  id           String   @id @default(cuid())
+  nome         String
+  email        String   @unique
+  senhaHash    String   @map("senha_hash")
+  role         Role     @default(USUARIO)
+  matricula    String?  @unique
+  cargo        String?
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+  /// Incrementada ao desativar a conta ou trocar o perfil: invalida sessões abertas na hora
+  sessaoVersao Int      @default(0) @map("sessao_versao")
+
+  agendamentos Agendamento[]
+  manutencoes  Manutencao[]
+  auditoria    RegistroAuditoria[]
+  comandos     ComandoRemoto[]
+  alarmesReconhecidos Alarme[] @relation("AlarmeReconhecidoPor")
+  dispositivos        Dispositivo[]     @relation("DispositivoResponsavel")
+  acoesDispositivo    AcaoDispositivo[]
+  emprestimos         Emprestimo[]      @relation("EmprestimoAluno")
+  emprestimosFeitos   Emprestimo[]      @relation("EmprestimoTecnico")
+  devolucoesRecebidas Emprestimo[]      @relation("EmprestimoRecebidoPor")
+  chamadosAtendidos   Chamado[]         @relation("ChamadosAtendidos")
+
+  @@map("usuarios")
+}
+
+model Equipamento {
+  id                     String            @id @default(cuid())
+  nome                   String
+  tipo                   TipoEquipamento
+  fabricante             String?
+  modelo                 String?
+  /// Número de patrimônio (asset tag)
+  patrimonio             String?           @unique
+  numeroSerie            String?           @map("numero_serie")
+  localizacao            String?
+  status                 StatusEquipamento @default(LIVRE)
+  criticidade            Criticidade       @default(MEDIA)
+  duracaoSlotMinutos     Int               @default(60) @map("duracao_slot_minutos")
+  requerCalibracao       Boolean           @default(false) @map("requer_calibracao")
+  intervaloCalibracaoDias Int?             @map("intervalo_calibracao_dias")
+  /// Vencida => o equipamento deixa de aceitar reservas automaticamente
+  proximaCalibracaoEm    DateTime?         @map("proxima_calibracao_em") @db.Timestamptz(3)
+  ativo                  Boolean           @default(true)
+  criadoEm               DateTime          @default(now()) @map("criado_em")
+  atualizadoEm           DateTime          @updatedAt @map("atualizado_em")
+
+  // ── Conectividade (rede industrial / OT) ──
+  enderecoIp       String?              @map("endereco_ip")
+  protocolo        ProtocoloIndustrial?
+  firmware         String?
+  /// Stream da câmera (ex.: rtsp://10.40.1.21/stream1), servido ao navegador via gateway WebRTC
+  cameraUrl        String?              @map("camera_url")
+  estadoMaquina    EstadoMaquina        @default(OCIOSO) @map("estado_maquina")
+  ultimoContatoEm  DateTime?            @map("ultimo_contato_em") @db.Timestamptz(3)
+
+  laboratorioId String      @map("laboratorio_id")
+  laboratorio   Laboratorio @relation(fields: [laboratorioId], references: [id], onDelete: Restrict)
+
+  agendamentos Agendamento[]
+  manutencoes  Manutencao[]
+  alarmes      Alarme[]
+  comandos     ComandoRemoto[]
+
+  @@index([laboratorioId])
+  @@index([status])
+  @@index([proximaCalibracaoEm])
+  @@map("equipamentos")
+}
+
+model Agendamento {
+  id           String            @id @default(cuid())
+  inicio       DateTime          @db.Timestamptz(3)
+  fim          DateTime          @db.Timestamptz(3)
+  status       StatusAgendamento @default(CONFIRMADO)
+  /// Projeto, ordem de serviço ou centro de custo
+  finalidade   String?
+  canceladoEm  DateTime?         @map("cancelado_em")
+  criadoEm     DateTime          @default(now()) @map("criado_em")
+  atualizadoEm DateTime          @updatedAt @map("atualizado_em")
+
+  usuarioId String  @map("usuario_id")
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  equipamentoId String      @map("equipamento_id")
+  equipamento   Equipamento @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+
+  @@index([equipamentoId, inicio])
+  @@index([usuarioId, inicio])
+  @@index([inicio])
+  @@map("agendamentos")
+}
+
+/// Calibrações e manutenções executadas (histórico de conformidade)
+model Manutencao {
+  id          String         @id @default(cuid())
+  tipo        TipoManutencao
+  descricao   String
+  realizadaEm DateTime       @map("realizada_em") @db.Timestamptz(3)
+  /// Nº do certificado de calibração (quando houver)
+  certificado String?
+  /// Validade da calibração — passa a ser a próxima data de vencimento
+  validadeAte DateTime?      @map("validade_ate") @db.Timestamptz(3)
+  criadoEm    DateTime       @default(now()) @map("criado_em")
+
+  equipamentoId String      @map("equipamento_id")
+  equipamento   Equipamento @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+
+  responsavelId String  @map("responsavel_id")
+  responsavel   Usuario @relation(fields: [responsavelId], references: [id], onDelete: Restrict)
+
+  @@index([equipamentoId, realizadaEm])
+  @@map("manutencoes")
+}
+
+/// Alarme/erro disparado pela máquina (código do fabricante + mensagem)
+model Alarme {
+  id             String           @id @default(cuid())
+  codigo         String
+  mensagem       String
+  severidade     SeveridadeAlarme
+  ativoDesde     DateTime         @map("ativo_desde") @db.Timestamptz(3)
+  /// null = alarme ainda ativo na máquina
+  encerradoEm    DateTime?        @map("encerrado_em") @db.Timestamptz(3)
+  reconhecidoEm  DateTime?        @map("reconhecido_em") @db.Timestamptz(3)
+
+  equipamentoId  String      @map("equipamento_id")
+  equipamento    Equipamento @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+
+  reconhecidoPorId String?  @map("reconhecido_por_id")
+  reconhecidoPor   Usuario? @relation("AlarmeReconhecidoPor", fields: [reconhecidoPorId], references: [id], onDelete: SetNull)
+
+  @@index([equipamentoId, ativoDesde(sort: Desc)])
+  @@index([encerradoEm])
+  @@map("alarmes")
+}
+
+/// Comando enviado remotamente a uma máquina (sempre auditado)
+model ComandoRemoto {
+  id          String        @id @default(cuid())
+  tipo        TipoComando
+  status      StatusComando
+  /// Motivo da recusa (ex.: máquina offline, comando inválido para o estado)
+  motivo      String?
+  justificativa String?
+  criadoEm    DateTime      @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  equipamentoId String      @map("equipamento_id")
+  equipamento   Equipamento @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+
+  usuarioId String  @map("usuario_id")
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([equipamentoId, criadoEm(sort: Desc)])
+  @@map("comandos_remotos")
+}
+
+// ─────────────────────────── Dispositivos (gestão de endpoints) ───────────────────────────
+
+/// Política aplicada pelo agente: USB, downloads, sites, apps e criptografia
+model PoliticaDispositivo {
+  id                  String       @id @default(cuid())
+  nome                String       @unique
+  descricao           String?
+  bloquearUsb         Boolean      @default(true) @map("bloquear_usb")
+  modoDownload        ModoDownload @default(BLOQUEAR_EXECUTAVEIS) @map("modo_download")
+  /// Categorias de site bloqueadas (ex.: "jogos", "torrent", "redes_sociais")
+  sitesBloqueados     String[]     @default([]) @map("sites_bloqueados")
+  /// Aplicativos proibidos (o agente impede a execução e a instalação)
+  appsBloqueados      String[]     @default([]) @map("apps_bloqueados")
+  exigirCriptografia  Boolean      @default(true) @map("exigir_criptografia")
+  bloqueioTelaMinutos Int          @default(10) @map("bloqueio_tela_minutos")
+  /// Trava sozinho os aparelhos do espaço (não emprestados) no fechamento e libera na abertura
+  bloquearForaHorario Boolean      @default(false) @map("bloquear_fora_horario")
+  atualizadoEm        DateTime     @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  dispositivos Dispositivo[]
+
+  @@map("politicas_dispositivo")
+}
+
+/// Computador, notebook, tablet ou celular corporativo com o agente LabOps instalado
+model Dispositivo {
+  id                    String             @id @default(cuid())
+  hostname              String             @unique
+  tipo                  TipoDispositivo
+  so                    SistemaOperacional
+  versaoSo              String             @map("versao_so")
+  fabricante            String
+  modelo                String
+  numeroSerie           String             @unique @map("numero_serie")
+  enderecoIp            String?            @map("endereco_ip")
+  enderecoMac           String?            @unique @map("endereco_mac")
+  agenteVersao          String             @map("agente_versao")
+  criptografado         Boolean            @default(false)
+  antivirusAtivo        Boolean            @default(true) @map("antivirus_ativo")
+  firewallAtivo         Boolean            @default(true) @map("firewall_ativo")
+  atualizacoesPendentes Int                @default(0) @map("atualizacoes_pendentes")
+  armazenamentoGb       Int                @map("armazenamento_gb")
+  bloqueado             Boolean            @default(false)
+  appsInstalados        String[]           @default([]) @map("apps_instalados")
+  ultimoContatoEm       DateTime?          @map("ultimo_contato_em") @db.Timestamptz(3)
+  ativo                 Boolean            @default(true)
+  criadoEm              DateTime           @default(now()) @map("criado_em") @db.Timestamptz(3)
+  /// true = um agente real foi inscrito (telemetria vem do check-in, não do simulador)
+  agenteReal            Boolean            @default(false) @map("agente_real")
+  /// SHA-256 do token do agente (o token em si só é mostrado uma vez, na inscrição)
+  agenteTokenHash       String?            @unique @map("agente_token_hash")
+  /// Última leitura enviada pelo agente real (CPU, memória, disco, bateria, sessão…)
+  telemetria            Json?
+  telemetriaEm          DateTime?          @map("telemetria_em") @db.Timestamptz(3)
+
+  responsavelId String?  @map("responsavel_id")
+  responsavel   Usuario? @relation("DispositivoResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
+
+  laboratorioId String?      @map("laboratorio_id")
+  laboratorio   Laboratorio? @relation(fields: [laboratorioId], references: [id], onDelete: SetNull)
+
+  politicaId String?              @map("politica_id")
+  politica   PoliticaDispositivo? @relation(fields: [politicaId], references: [id], onDelete: SetNull)
+
+  acoes       AcaoDispositivo[]
+  eventos     EventoDispositivo[]
+  emprestimos Emprestimo[]
+  chamados    Chamado[]
+  /// Inscrição Web Push do agente pelo navegador (celular)
+  pushInscricao Json? @map("push_inscricao")
+
+  @@index([laboratorioId])
+  @@index([responsavelId])
+  @@map("dispositivos")
+}
+
+/// Ação enviada pelo TI a um dispositivo (alerta, bloqueio, app, sessão remota…).
+/// Alertas em massa compartilham o mesmo `lote`.
+model AcaoDispositivo {
+  id            String              @id @default(cuid())
+  tipo          TipoAcaoDispositivo
+  status        StatusAcao          @default(PENDENTE)
+  lote          String?
+  titulo        String?
+  mensagem      String?
+  prioridade    SeveridadeAlarme?
+  /// Parâmetro da ação (ex.: nome do aplicativo)
+  parametro     String?
+  justificativa String?
+  motivo        String?
+  criadoEm      DateTime            @default(now()) @map("criado_em") @db.Timestamptz(3)
+  concluidoEm   DateTime?           @map("concluido_em") @db.Timestamptz(3)
+
+  dispositivoId String      @map("dispositivo_id")
+  dispositivo   Dispositivo @relation(fields: [dispositivoId], references: [id], onDelete: Cascade)
+
+  /// null = ação do SISTEMA (lembrete de devolução, bloqueio no fechamento)
+  usuarioId String?  @map("usuario_id")
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([dispositivoId, criadoEm(sort: Desc)])
+  @@index([lote])
+  @@map("acoes_dispositivo")
+}
+
+/// Evento reportado pelo agente (download bloqueado, USB, site, app, conformidade)
+model EventoDispositivo {
+  id         String           @id @default(cuid())
+  tipo       String
+  descricao  String
+  severidade SeveridadeAlarme @default(INFO)
+  criadoEm   DateTime         @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  dispositivoId String      @map("dispositivo_id")
+  dispositivo   Dispositivo @relation(fields: [dispositivoId], references: [id], onDelete: Cascade)
+
+  @@index([criadoEm(sort: Desc)])
+  @@index([dispositivoId, criadoEm(sort: Desc)])
+  @@map("eventos_dispositivo")
+}
+
+/// Empréstimo de notebook/tablet do espaço a um aluno. Só um empréstimo aberto por aparelho.
+model Emprestimo {
+  id          String    @id @default(cuid())
+  retiradoEm  DateTime  @default(now()) @map("retirado_em") @db.Timestamptz(3)
+  prazoEm     DateTime  @map("prazo_em") @db.Timestamptz(3)
+  /// null = ainda com o aluno
+  devolvidoEm DateTime? @map("devolvido_em") @db.Timestamptz(3)
+  observacao  String?
+
+  dispositivoId String      @map("dispositivo_id")
+  dispositivo   Dispositivo @relation(fields: [dispositivoId], references: [id], onDelete: Cascade)
+
+  usuarioId String  @map("usuario_id")
+  usuario   Usuario @relation("EmprestimoAluno", fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  tecnicoId String  @map("tecnico_id")
+  tecnico   Usuario @relation("EmprestimoTecnico", fields: [tecnicoId], references: [id], onDelete: Restrict)
+
+  recebidoPorId String?  @map("recebido_por_id")
+  recebidoPor   Usuario? @relation("EmprestimoRecebidoPor", fields: [recebidoPorId], references: [id], onDelete: SetNull)
+
+  @@index([dispositivoId, retiradoEm(sort: Desc)])
+  @@index([usuarioId])
+  @@index([devolvidoEm])
+  @@map("emprestimos")
+}
+
+/// Tentativas de login (com e sem sucesso) — base do limite contra força bruta.
+model TentativaLogin {
+  id       String   @id @default(cuid())
+  email    String
+  ip       String?
+  sucesso  Boolean
+  criadoEm DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  @@index([email, criadoEm(sort: Desc)])
+  @@index([ip, criadoEm(sort: Desc)])
+  @@map("tentativas_login")
+}
+
+/// Trilha de auditoria: quem fez o quê, quando e em qual registro.
+/// Só recebe INSERT — nunca é alterada nem apagada pela aplicação.
+model RegistroAuditoria {
+  id         String   @id @default(cuid())
+  criadoEm   DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+  /// Ex.: "equipamento.status_alterado"
+  acao       String
+  entidade   String
+  entidadeId String?  @map("entidade_id")
+  resumo     String
+  dados      Json?
+  ip         String?
+
+  /// Snapshot do autor: o registro continua legível mesmo se o usuário for removido
+  usuarioNome String  @map("usuario_nome")
+  usuarioRole Role?   @map("usuario_role")
+  usuarioId   String? @map("usuario_id")
+  usuario     Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([criadoEm(sort: Desc)])
+  @@index([entidade, entidadeId])
+  @@index([usuarioId])
+  @@map("auditoria")
+}
+
+// ───────────────────────── Atendimento (0007) ─────────────────────────
+
+enum StatusChamado {
+  ABERTO
+  EM_ATENDIMENTO
+  RESOLVIDO
+  CANCELADO
+}
+
+enum AutorMensagem {
+  LIDER
+  USUARIO
+  SISTEMA
+}
+
+/// Pedido de ajuda aberto pelo usuário de um aparelho (ou pelo Líder) — com chat
+model Chamado {
+  id              String        @id @default(cuid())
+  numero          Int           @unique @default(autoincrement())
+  descricao       String
+  nomeSolicitante String?       @map("nome_solicitante")
+  /// O próprio usuário já autorizou o Líder a ver a tela ao abrir o chamado
+  autorizaTela    Boolean       @default(false) @map("autoriza_tela")
+  status          StatusChamado @default(ABERTO)
+  criadoEm        DateTime      @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atendidoEm      DateTime?     @map("atendido_em") @db.Timestamptz(3)
+  resolvidoEm     DateTime?     @map("resolvido_em") @db.Timestamptz(3)
+
+  dispositivoId String      @map("dispositivo_id")
+  dispositivo   Dispositivo @relation(fields: [dispositivoId], references: [id], onDelete: Cascade)
+
+  atendidoPorId String?  @map("atendido_por_id")
+  atendidoPor   Usuario? @relation("ChamadosAtendidos", fields: [atendidoPorId], references: [id], onDelete: SetNull)
+
+  mensagens MensagemSuporte[]
+
+  @@index([status, criadoEm(sort: Desc)])
+  @@index([dispositivoId, criadoEm(sort: Desc)])
+  @@map("chamados")
+}
+
+model MensagemSuporte {
+  id         String        @id @default(cuid())
+  autor      AutorMensagem
+  autorNome  String?       @map("autor_nome")
+  texto      String
+  criadoEm   DateTime      @default(now()) @map("criado_em") @db.Timestamptz(3)
+  /// Quando o aparelho recebeu (mensagens do Líder) — vira "entregue" no chat
+  entregueEm DateTime?     @map("entregue_em") @db.Timestamptz(3)
+
+  chamadoId String  @map("chamado_id")
+  chamado   Chamado @relation(fields: [chamadoId], references: [id], onDelete: Cascade)
+
+  @@index([chamadoId, criadoEm])
+  @@map("mensagens_suporte")
+}
+
+model ConfigSistema {
+  chave        String   @id
+  valor        String
+  atualizadoEm DateTime @default(now()) @map("atualizado_em") @db.Timestamptz(3)
+
+  @@map("config_sistema")
+}

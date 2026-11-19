@@ -1,0 +1,38 @@
+# Sobe o LabMaker completo: PostgreSQL + preparação do banco + aplicação.
+#   docker compose up --build        → http://localhost:3000  (espaço zerado; Líder: lider@labmaker.dev)
+#   SEED=--demo docker compose up    → com dados de exemplo (só se o banco estiver vazio)
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: labmaker
+      POSTGRES_USER: labmaker
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-labmaker}
+    volumes: [dados:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U labmaker -d labmaker"]
+      interval: 3s
+      retries: 20
+
+  setup:
+    build: .
+    command: ["npx", "tsx", "scripts/db-setup.ts", "${SEED:-}"]
+    environment: &env
+      DATABASE_URL: postgresql://labmaker:${POSTGRES_PASSWORD:-labmaker}@db:5432/labmaker
+      AUTH_SECRET: ${AUTH_SECRET:-troque-este-segredo-em-producao-com-32-caracteres}
+      LIDER_EMAIL: ${LIDER_EMAIL:-lider@labmaker.dev}
+      LIDER_SENHA: ${LIDER_SENHA:-labmaker123}
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  app:
+    build: .
+    environment: *env
+    ports: ["3000:3000"]
+    depends_on:
+      setup: { condition: service_completed_successfully }
+    restart: unless-stopped
+
+volumes:
+  dados:
