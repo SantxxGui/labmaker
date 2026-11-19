@@ -26,6 +26,8 @@ npm run db:reset
 
 Banco vazio não precisa disso: o servidor prepara sozinho no primeiro start.
 
+**Sem acesso ao seu PC?** Dá para recriar pelo Render: em **Environment**, adicione `RECRIAR_BANCO_ANTIGO` = `sim` (e `LIDER_NOME`, `LIDER_CARGO`, `LIDER_SENHA`, `LIDER_EMAIL` da sua conta) → **Save, rebuild, and deploy**. O servidor só recria se o banco for de uma versão antiga; um banco atualizado nunca é apagado, mesmo com a opção esquecida ligada.
+
 ## 2. GitHub — o código
 
 1. Instale o **Git** e crie um repositório **privado** em github.com (ex.: `labmaker`).
