@@ -262,7 +262,7 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
             </div>
             <p className="text-[12px] text-subtle">
               <span className="text-fg">3.</span> Em segundos o computador aparece nesta lista com o selo <span className="text-ok">Agente real</span>.
-              Opções: <code className="font-mono">--permitir-bloqueio</code> (trava a sessão de verdade), <code className="font-mono">--aplicar-politica</code> (quarentena de executáveis baixados) e <code className="font-mono">--testar-captura</code> (confere se a tela pode ser compartilhada). Depois de inscrito, rode <code className="font-mono">node agente.mjs --instalar-servico</code>: o agente passa a iniciar sozinho com o computador e aparece o atalho “Pedir ajuda ao Líder” na área de trabalho.
+              Opções: <code className="font-mono">--permitir-bloqueio</code> (trava a sessão de verdade), <code className="font-mono">--permitir-reinicio</code> (reinicia com 1 minuto de aviso), <code className="font-mono">--aplicar-politica</code> (quarentena de executáveis baixados) e <code className="font-mono">--testar-captura</code> (confere se a tela pode ser compartilhada). Depois de inscrito, rode <code className="font-mono">node agente.mjs --instalar-servico</code>: o agente passa a iniciar sozinho com o computador e aparece o atalho “Pedir ajuda ao Líder” na área de trabalho.
             </p>
             <div className="flex justify-end"><Button variant="ghost" onClick={() => setAberto(false)}>Fechar</Button></div>
           </motion.div>
