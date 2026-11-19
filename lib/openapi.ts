@@ -21,6 +21,9 @@ export const ROTAS: [Metodo, string, Op][] = [
   ["post", "/api/auth/cadastro", { tag: "Autenticação", resumo: "Criar conta de aluno", publico: true, corpo: v.cadastroSchema, respostas: { 201: "Conta criada", 409: "E-mail já cadastrado" } }],
   ["post", "/api/auth/logout", { tag: "Autenticação", resumo: "Sair (apaga o cookie)" }],
   ["get", "/api/auth/me", { tag: "Autenticação", resumo: "Usuário da sessão atual" }],
+  ["get", "/api/auth/perfil", { tag: "Autenticação", resumo: "Meu perfil: dados da própria conta" }],
+  ["patch", "/api/auth/perfil", { tag: "Autenticação", resumo: "Mudar o próprio nome (aparece na hora, sem novo login)", corpo: v.perfilSchema }],
+  ["post", "/api/auth/senha", { tag: "Autenticação", resumo: "Trocar a própria senha: pede a atual, conta erro no limite do login, derruba as outras sessões", corpo: v.trocarSenhaSchema, respostas: { 200: "Senha trocada; sessão renovada", 400: "Senha atual incorreta", 429: "Muitas tentativas" } }],
 
   // Máquinas e reservas
   ["get", "/api/equipamentos", { tag: "Máquinas", resumo: "Listar máquinas", perm: "equipamento:ver" }],

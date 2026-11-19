@@ -17,6 +17,7 @@ const AREAS: [prefixo: string, permissao: Permissao | null][] = [
   ["/atendimento", "dispositivo:comandar"],
   ["/diagnostico", "dispositivo:cadastrar"],
   ["/reservas", null],
+  ["/perfil", null],
   ["/equipamentos", null],
   ["/laboratorios", null],
 ];
@@ -44,5 +45,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/login", "/cadastro", "/painel/:path*", "/reservas/:path*", "/agenda/:path*", "/equipamentos/:path*", "/calibracao/:path*", "/laboratorios/:path*", "/auditoria/:path*", "/usuarios/:path*", "/dispositivos/:path*", "/atendimento/:path*", "/diagnostico/:path*", "/tv/:path*", "/tv"],
+  matcher: ["/login", "/cadastro", "/painel/:path*", "/reservas/:path*", "/agenda/:path*", "/equipamentos/:path*", "/calibracao/:path*", "/laboratorios/:path*", "/auditoria/:path*", "/usuarios/:path*", "/dispositivos/:path*", "/atendimento/:path*", "/diagnostico/:path*", "/tv/:path*", "/tv", "/perfil"],
 };

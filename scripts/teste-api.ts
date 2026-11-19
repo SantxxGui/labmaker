@@ -186,6 +186,25 @@ async function main() {
   await aluno.login(email, rs.json!.senhaTemporaria);
   confere("aluno entra com a senha temporária", (await aluno.get("/api/auth/me")).status === 200);
 
+  // ── Meu perfil: nome e senha da própria conta
+  const senhaTemp = rs.json!.senhaTemporaria as string;
+  confere("aluno vê o próprio perfil", (await aluno.get("/api/auth/perfil")).json?.usuario?.email === email);
+  confere("aluno muda o próprio nome", (await aluno.patch("/api/auth/perfil", { nome: "Aluno Renomeado" })).status === 200);
+  confere("nome novo aparece sem novo login", (await aluno.get("/api/auth/me")).json?.usuario?.nome === "Aluno Renomeado");
+  confere("nome curto demais → 422", (await aluno.patch("/api/auth/perfil", { nome: "ab" })).status === 422);
+  const outroAparelho = await new Cliente("Aluno no celular").login(email, senhaTemp);
+  confere("senha atual errada → 400", (await aluno.post("/api/auth/senha", { senhaAtual: "errada", novaSenha: "novasenha99" })).status === 400);
+  confere("nova senha igual à atual → 422", (await aluno.post("/api/auth/senha", { senhaAtual: senhaTemp, novaSenha: senhaTemp })).status === 422);
+  confere("aluno troca a própria senha", (await aluno.post("/api/auth/senha", { senhaAtual: senhaTemp, novaSenha: "novasenha99" })).status === 200);
+  confere("quem trocou continua conectado", (await aluno.get("/api/auth/me")).status === 200);
+  confere("o outro aparelho é desconectado", (await outroAparelho.get("/api/auth/me")).status === 401);
+  confere("a senha nova entra", (await new Cliente("x").post("/api/auth/login", { email, senha: "novasenha99" })).status === 200);
+  confere("Líder corrige o nome do aluno", (await lider.patch(`/api/usuarios/${alunoId}`, { nome: "Aluno Corrigido" })).status === 200);
+  confere("corrigir o nome não desconecta o aluno", (await aluno.get("/api/auth/me")).json?.usuario?.nome === "Aluno Corrigido");
+  confere("aluno NÃO edita a conta de ninguém", (await aluno.patch(`/api/usuarios/${alunoId}`, { nome: "Hacker" })).status === 403);
+  const liderId = (await lider.get("/api/auth/me")).json?.usuario?.id;
+  confere("Líder muda o próprio nome só pelo Meu perfil", (await lider.patch(`/api/usuarios/${liderId}`, { nome: "Outro" })).status === 422);
+
   // ── Revogação de sessão: o Líder bloqueia o aluno → a sessão aberta morre na hora
   confere("Líder bloqueia o aluno", (await lider.patch(`/api/usuarios/${alunoId}`, { ativo: false })).status === 200);
   confere("sessão do aluno revogada imediatamente", (await aluno.get("/api/agendamentos")).status === 401);

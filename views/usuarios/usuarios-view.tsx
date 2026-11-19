@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Check, Copy, KeyRound } from "lucide-react";
+import { Check, Copy, KeyRound, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Avatar } from "@/components/ui/avatar";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, PageHeader, SearchInput, td, th, tr } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Field, Input } from "@/components/ui/input";
 import { PERMISSOES, ROLES, ROLE_DESCRICAO, ROLE_LABEL, type Role } from "@/lib/permissions";
 import type { UsuarioDTO } from "@/lib/types";
 import { cn, fetchJson, formatData } from "@/lib/utils";
@@ -20,6 +21,7 @@ export function UsuariosView({ inicial, euId }: { inicial: UsuarioDTO[]; euId: s
   const [pendente, setPendente] = useState<string | null>(null);
   const [senha, setSenha] = useState<{ nome: string; email: string; valor: string } | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [renomeando, setRenomeando] = useState<{ u: UsuarioDTO; nome: string } | null>(null);
 
   async function redefinirSenha(u: UsuarioDTO) {
     setPendente(u.id);
@@ -39,13 +41,13 @@ export function UsuariosView({ inicial, euId }: { inicial: UsuarioDTO[]; euId: s
     return usuarios.filter((u) => !q || [u.nome, u.email, u.cargo, u.matricula, ROLE_LABEL[u.role]].some((v) => v?.toLowerCase().includes(q)));
   }, [usuarios, busca]);
 
-  async function atualizar(u: UsuarioDTO, dados: { role?: Role; ativo?: boolean }) {
+  async function atualizar(u: UsuarioDTO, dados: { nome?: string; role?: Role; ativo?: boolean }) {
     setPendente(u.id);
     setUsuarios((l) => l.map((x) => (x.id === u.id ? { ...x, ...dados } : x)));
     try {
       await fetchJson(`/api/usuarios/${u.id}`, { method: "PATCH", body: JSON.stringify(dados) });
       toast.success(`${u.nome} atualizado`, {
-        description: dados.role ? `Perfil: ${ROLE_LABEL[dados.role]}` : dados.ativo ? "Conta reativada" : "Conta desativada — o acesso foi bloqueado",
+        description: dados.nome ? `Nome: ${dados.nome}` : dados.role ? `Perfil: ${ROLE_LABEL[dados.role]}` : dados.ativo ? "Conta reativada" : "Conta desativada — o acesso foi bloqueado",
       });
     } catch (err) {
       setUsuarios((l) => l.map((x) => (x.id === u.id ? u : x)));
@@ -82,7 +84,14 @@ export function UsuariosView({ inicial, euId }: { inicial: UsuarioDTO[]; euId: s
                       <div className="flex items-center gap-3">
                         <Avatar nome={u.nome} />
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-fg">{u.nome}{eu && <Badge className="ml-2 h-5">você</Badge>}</p>
+                          <p className="flex items-center gap-1 truncate font-medium text-fg">
+                            {u.nome}
+                            {eu ? <Badge className="ml-1 h-5">você</Badge> : (
+                              <button type="button" onClick={() => setRenomeando({ u, nome: u.nome })} disabled={pendente === u.id} aria-label={`Editar o nome de ${u.nome}`} title="Editar nome" className="grid size-6 place-items-center rounded text-subtle hover:bg-white/[0.06] hover:text-fg">
+                                <Pencil className="size-3.5" />
+                              </button>
+                            )}
+                          </p>
                           <p className="truncate text-xs text-subtle">{u.email}</p>
                         </div>
                       </div>
@@ -118,6 +127,36 @@ export function UsuariosView({ inicial, euId }: { inicial: UsuarioDTO[]; euId: s
           </table>
         </div>
       </Card>
+
+      <Dialog open={!!renomeando} onOpenChange={(o) => !o && setRenomeando(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Pencil className="size-4 text-subtle" />Editar nome</DialogTitle>
+            <DialogDescription>Para corrigir um nome digitado errado no cadastro. A pessoa continua conectada e a mudança vai para a auditoria.</DialogDescription>
+          </DialogHeader>
+          {renomeando && (
+            <form
+              className="space-y-4"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const nome = renomeando.nome.trim();
+                if (nome.length < 3 || nome === renomeando.u.nome) return setRenomeando(null);
+                const u = renomeando.u;
+                setRenomeando(null);
+                await atualizar(u, { nome });
+              }}
+            >
+              <Field label="Nome completo" htmlFor="renomear">
+                <Input id="renomear" autoFocus value={renomeando.nome} onChange={(e) => setRenomeando({ ...renomeando, nome: e.target.value })} minLength={3} maxLength={80} required />
+              </Field>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setRenomeando(null)}>Cancelar</Button>
+                <Button type="submit" disabled={renomeando.nome.trim().length < 3 || renomeando.nome.trim() === renomeando.u.nome}>Salvar</Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!senha} onOpenChange={(o) => !o && setSenha(null)}>
         <DialogContent className="max-w-md">

@@ -2,7 +2,7 @@
 
 > Gerado por `npm run docs:api` a partir de `lib/openapi.ts`. Versão navegável e testável em **`/api-docs`**; especificação OpenAPI 3.1 em **`/api/openapi.json`**.
 
-**68 operações.** JSON em UTF-8. Erros sempre como `{ "error": "mensagem em português" }`.
+**71 operações.** JSON em UTF-8. Erros sempre como `{ "error": "mensagem em português" }`.
 
 | Código | Quando |
 |---|---|
@@ -23,6 +23,9 @@ Autenticação: cookie `labops_session` (JWT httpOnly) obtido em `POST /api/auth
 | `POST` | `/api/auth/cadastro` | Criar conta de aluno | público |
 | `POST` | `/api/auth/logout` | Sair (apaga o cookie) | logado |
 | `GET` | `/api/auth/me` | Usuário da sessão atual | logado |
+| `GET` | `/api/auth/perfil` | Meu perfil: dados da própria conta | logado |
+| `PATCH` | `/api/auth/perfil` | Mudar o próprio nome (aparece na hora, sem novo login) | logado |
+| `POST` | `/api/auth/senha` | Trocar a própria senha: pede a atual, conta erro no limite do login, derruba as outras sessões | logado |
 
 ## Reservas
 
@@ -139,6 +142,6 @@ Autenticação: cookie `labops_session` (JWT httpOnly) obtido em `POST /api/auth
 B=http://localhost:3000
 curl -c c.txt -X POST $B/api/auth/login -H 'Content-Type: application/json' -d '{"email":"lider@labmaker.dev","senha":"labmaker123"}'
 curl -b c.txt $B/api/equipamentos
-npm run test:api           # 91 verificações ponta a ponta
+npm run test:api           # 105 verificações ponta a ponta
 npm run test:concorrencia  # 50 pedidos simultâneos → 1 reserva
 ```

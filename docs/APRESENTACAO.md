@@ -35,7 +35,7 @@ Preparo em [`DEMO-VM-CELULAR.md`](DEMO-VM-CELULAR.md) (seção "Sem notebook e s
 
 ## 6. Por dentro (2,5 min) — tudo pelo navegador
 No PC da faculdade não precisa de Node nem de VS Code: o código e os testes estão no **GitHub**.
-- Aba **Actions** do repositório → a última execução do **CI** verde: tipos, 91 testes unitários, banco criado do zero, build, **91 verificações ponta a ponta** e **concorrência: 50 pedidos simultâneos no mesmo horário → 1 reserva, 49 recusas**. Frase: *"cada envio de código roda tudo isso sozinho contra um PostgreSQL de verdade"*.
+- Aba **Actions** do repositório → a última execução do **CI** verde: tipos, 91 testes unitários, banco criado do zero, build, **105 verificações ponta a ponta** e **concorrência: 50 pedidos simultâneos no mesmo horário → 1 reserva, 49 recusas**. Frase: *"cada envio de código roda tudo isso sozinho contra um PostgreSQL de verdade"*.
 - No código (GitHub): `app/api/emprestimos/route.ts` (3 linhas) → `controllers/emprestimo.controller.ts` → `lib/emprestimo.ts` (regra pura, testada) → `models/emprestimo.model.ts`. Isso é o MVC.
 - `models/agendamento.model.ts` → `pg_advisory_xact_lock`: a trava que garante 1 reserva por horário.
 - `/api-docs` no próprio LabMaker online → a API documentada e testável, gerada dos mesmos schemas Zod que validam as requisições.

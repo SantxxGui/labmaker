@@ -48,9 +48,31 @@ export const UsuarioModel = {
     return rows.map(toDTO);
   },
 
-  /** Trocar perfil ou desativar incrementa a versão da sessão: quem estiver logado cai na hora. */
-  async atualizar(id: string, dados: { role?: Role; ativo?: boolean }) {
-    return toDTO(await prisma.usuario.update({ where: { id }, data: { ...dados, sessaoVersao: { increment: 1 } } }));
+  /**
+   * Trocar perfil ou desativar incrementa a versão da sessão: quem estiver logado cai na hora.
+   * Só corrigir o nome não derruba ninguém (o nome é relido do banco a cada requisição).
+   */
+  async atualizar(id: string, dados: { nome?: string; role?: Role; ativo?: boolean }) {
+    const derruba = dados.role !== undefined || dados.ativo !== undefined;
+    return toDTO(await prisma.usuario.update({ where: { id }, data: { ...dados, ...(derruba ? { sessaoVersao: { increment: 1 } } : {}) } }));
+  },
+
+  /** Dados do próprio usuário para a página Meu perfil. */
+  async perfil(id: string) {
+    const u = await prisma.usuario.findUnique({ where: { id } });
+    return u ? toDTO(u) : null;
+  },
+
+  async renomear(id: string, nome: string) {
+    return toDTO(await prisma.usuario.update({ where: { id }, data: { nome } }));
+  },
+
+  /** O próprio usuário troca a senha: as outras sessões caem; quem trocou recebe uma sessão nova. */
+  trocarSenha(id: string, senhaHash: string) {
+    return prisma.usuario.update({
+      where: { id }, data: { senhaHash, sessaoVersao: { increment: 1 } },
+      select: { id: true, nome: true, email: true, role: true, sessaoVersao: true },
+    });
   },
 
   contarLideresAtivos() {
