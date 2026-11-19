@@ -20,7 +20,7 @@ Reserva das impressoras e do laser em planilha; ninguém sabe se a impressão tr
 Preparo em [`DEMO-VM-CELULAR.md`](DEMO-VM-CELULAR.md) (seção "Sem notebook e sem VM"). 10 min antes, abra **Diagnóstico** e deixe tudo verde. O "PC do aluno" é outro PC da sala com o agente aberto no Chrome em **tela cheia (F11)**; o colega fica com o celular.
 - **O aluno pede ajuda:** no PC do aluno, **Pedir ajuda ao Líder** → descreve. No LabMaker o menu **Atendimento** ganha um selo e aparece um aviso. **Atender** → chat → a resposta chega na hora no PC do aluno.
 - **Ver tela** → o Chrome do aluno pergunta o que compartilhar → **Tela inteira** → a tela aparece **ao vivo** no LabMaker, e o PC do aluno mostra "Sua tela está sendo vista". Mexa no PC do aluno. **Encerrar.** Frase: *"sem autorização do aluno, ninguém vê nada — e fica registrado na auditoria"*.
-- **Bloquear** o PC do aluno → a tela de bloqueio cobre tudo em 1 segundo. *"Pelo navegador eu travo a página; no agente instalado (`agente.mjs --permitir-bloqueio`) trava o computador de verdade."*
+- **Bloquear** o PC do aluno → a tela de bloqueio cobre tudo em 1 segundo. *"Pelo navegador eu travo a página; no agente instalado (`agente.mjs --permitir-bloqueio`) trava o computador de verdade, e se o aluno destravar com a senha dele, trava de novo até eu liberar."*
 - **Alerta** para o celular → vibra (ou chega como notificação com o app fechado) → o colega toca **Entendi** → no LabMaker: *Lido pelo usuário*.
 - **O celular pede ajuda** → conversem pelo Atendimento.
 - **Fechamento automático** (só se a banca for entre 8h e 20h e o PC do aluno estiver numa política com *Travar fora do horário*): Diagnóstico → **Simular 20h** → o PC do aluno trava sozinho, registrado como *Sistema LabMaker*.
