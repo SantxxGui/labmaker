@@ -228,8 +228,9 @@ export function avaliarConformidade(d: DispositivoParaConformidade, agora = new 
       detalhe: d.atualizacoesPendentes === 0 ? "Em dia" : `${d.atualizacoesPendentes} pendente${d.atualizacoesPendentes > 1 ? "s" : ""}`,
     },
     {
-      chave: "agente", rotulo: "Agente LabMaker atualizado", ok: !versaoMenor(d.agenteVersao, AGENTE_ATUAL),
-      detalhe: `v${d.agenteVersao}${versaoMenor(d.agenteVersao, AGENTE_ATUAL) ? ` (atual: v${AGENTE_ATUAL})` : ""}`,
+      chave: "agente", rotulo: "Agente LabMaker atualizado", ok: d.agenteVersao.startsWith("web") || !versaoMenor(d.agenteVersao, AGENTE_ATUAL),
+      // pelo navegador a página sempre vem do servidor: está sempre na versão atual
+      detalhe: d.agenteVersao.startsWith("web") ? "Pelo navegador (sempre atual)" : `v${d.agenteVersao}${versaoMenor(d.agenteVersao, AGENTE_ATUAL) ? ` (atual: v${AGENTE_ATUAL})` : ""}`,
     },
     {
       chave: "contato", rotulo: "Check-in nos últimos 7 dias", ok: diasSemContato <= 7,

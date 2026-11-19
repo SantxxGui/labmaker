@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -109,16 +109,19 @@ export function DispositivoDetalheView(p: Props) {
     [d.so, d.appsInstalados, d.politica],
   );
 
+  // Celular/tablet conectado pela página /agente: o navegador só permite aviso, chat e cobrir a própria página.
+  // Ver a tela, instalar, reiniciar ou travar o aparelho de verdade exigem MDM (gerenciamento do aparelho).
+  const celularWeb = d.agenteReal && (d.tipo === "SMARTPHONE" || d.tipo === "TABLET") && d.agenteVersao.startsWith("web");
   const ACOES: { tipo: TipoAcaoDispositivo; icone: React.ElementType; texto: string; perigo?: boolean; oculto?: boolean }[] = [
-    { tipo: "ALERTA", icone: BellRing, texto: "Mostrar uma mensagem na tela" },
+    { tipo: "ALERTA", icone: BellRing, texto: celularWeb ? "Vibra e mostra a mensagem; volta a confirmação de leitura" : "Mostrar uma mensagem na tela" },
     d.bloqueado
       ? { tipo: "DESBLOQUEAR", icone: LockOpen, texto: "Liberar o uso do dispositivo" }
-      : { tipo: "BLOQUEAR", icone: Lock, texto: "Travar a tela até o Líder liberar" },
-    { tipo: "SESSAO_REMOTA", icone: MonitorUp, texto: "Ver a tela, com autorização do usuário" },
-    { tipo: "INSTALAR_APP", icone: Package, texto: "Instalar do catálogo aprovado" },
-    { tipo: "REINICIAR", icone: RotateCcw, texto: "Reiniciar o sistema" },
+      : { tipo: "BLOQUEAR", icone: Lock, texto: celularWeb ? "Cobre a página do LabMaker no celular" : "Travar a tela até o Líder liberar" },
+    { tipo: "SESSAO_REMOTA", icone: MonitorUp, texto: "Ver a tela, com autorização do usuário", oculto: celularWeb },
+    { tipo: "INSTALAR_APP", icone: Package, texto: "Instalar do catálogo aprovado", oculto: celularWeb },
+    { tipo: "REINICIAR", icone: RotateCcw, texto: "Reiniciar o sistema", oculto: celularWeb },
     { tipo: "SINCRONIZAR", icone: RefreshCw, texto: "Reaplicar política agora" },
-    { tipo: "APAGAR_DADOS", icone: Eraser, texto: "Perda ou roubo: apagar dados", perigo: true, oculto: !p.podeApagar },
+    { tipo: "APAGAR_DADOS", icone: Eraser, texto: "Perda ou roubo: apagar dados", perigo: true, oculto: !p.podeApagar || celularWeb },
   ];
 
   return (
@@ -136,7 +139,7 @@ export function DispositivoDetalheView(p: Props) {
               <p className="mt-1 text-sm text-muted">{d.fabricante} {d.modelo} · {d.versaoSo}</p>
               <p className="mt-1.5 text-[11px]">
                 {d.agenteReal
-                  ? <span className="rounded border border-ok/30 bg-ok-soft px-1.5 py-0.5 font-medium text-ok">Agente real · dados medidos no computador</span>
+                  ? <span className="rounded border border-ok/30 bg-ok-soft px-1.5 py-0.5 font-medium text-ok">{celularWeb ? "Agente real · pelo navegador do celular" : "Agente real · dados medidos no computador"}</span>
                   : <span className="rounded border border-line px-1.5 py-0.5 text-subtle">Agente simulado (demonstração)</span>}
               </p>
             </div>
@@ -157,7 +160,21 @@ export function DispositivoDetalheView(p: Props) {
         <div className="min-w-0 space-y-4">
           {/* Tela */}
           <Surgir i={1}>
-            {d.agenteReal ? (
+            {celularWeb ? (
+              <Card className="p-5">
+                <p className="eyebrow">Celular pelo navegador</p>
+                <p className="mt-2 text-[14px] font-medium">{d.hostname} está conectado pela página do agente.</p>
+                <ul className="mt-3 space-y-1.5 text-[13px] text-muted">
+                  <li>✓ Aviso com vibração e confirmação de leitura</li>
+                  <li>✓ Pedido de ajuda e chat com o Líder</li>
+                  <li>✓ Bloqueio: cobre a página do LabMaker até o Líder liberar</li>
+                  <li>✓ Notificação com o app fechado (com HTTPS)</li>
+                </ul>
+                <p className="mt-3 rounded-lg border border-line bg-white/[0.02] px-3 py-2.5 text-[12.5px] leading-relaxed text-subtle">
+                  Ver a tela e travar o celular inteiro não são possíveis pelo navegador: Android e iPhone só permitem isso para aparelhos com <span className="text-muted">gerenciamento (MDM)</span>, como os celulares corporativos. Em computadores, a tela ao vivo funciona.
+                </p>
+              </Card>
+            ) : d.agenteReal ? (
               <Card className="overflow-hidden p-0">
                 <TelaRemotaAoVivo dispositivoId={d.id} hostname={d.hostname} online={l.online} podeComandar={p.podeComandar} onPedir={() => setPedido({ tipo: "SESSAO_REMOTA" })} />
               </Card>
@@ -217,7 +234,7 @@ export function DispositivoDetalheView(p: Props) {
                   ["Sessão", l.usuarioSessao ?? "—"],
                   ["Em uso agora", l.appAtivo ?? "—"],
                   ["Ligado há", l.uptimeH !== null ? `${l.uptimeH} h` : "—"],
-                  ["Agente", `v${d.agenteVersao}`],
+                  ["Agente", d.agenteVersao.startsWith("web") ? `pelo navegador (${d.agenteVersao})` : `v${d.agenteVersao}`],
                   ["Nº de série", d.numeroSerie],
                   ["Armazenamento", `${d.armazenamentoGb} GB`],
                 ].map(([k, v]) => (
@@ -333,7 +350,7 @@ export function DispositivoDetalheView(p: Props) {
               ))}
             </AnimatePresence>
           </ul>
-          {p.podeComandar && catalogo.length > 0 && (
+          {p.podeComandar && catalogo.length > 0 && !celularWeb && (
             <div className="border-t border-line p-3">
               <Button variant="secondary" size="sm" className="w-full" onClick={() => setPedido({ tipo: "INSTALAR_APP" })}><Plus />Instalar do catálogo</Button>
             </div>
@@ -429,11 +446,15 @@ function DialogoAcao({ pedido, dispositivo: d, catalogo, enviando, onFechar, onE
   const [justificativa, setJustificativa] = useState("");
   const [confirmacao, setConfirmacao] = useState("");
 
+  // Limpa os campos só quando um pedido novo abre. A página se atualiza a cada 2,5 s e recria
+  // `catalogo`; depender dele apagava o que a pessoa estava digitando.
+  const catalogoRef = useRef(catalogo);
+  catalogoRef.current = catalogo;
   useEffect(() => {
     if (!pedido) return;
     setTitulo(""); setMensagem(""); setPrioridade("AVISO"); setJustificativa(""); setConfirmacao("");
-    setApp(pedido.parametro ?? catalogo[0] ?? "");
-  }, [pedido, catalogo]);
+    setApp(pedido.parametro ?? catalogoRef.current[0] ?? "");
+  }, [pedido]);
 
   if (!pedido) return null;
   const t = pedido.tipo;
@@ -445,7 +466,9 @@ function DialogoAcao({ pedido, dispositivo: d, catalogo, enviando, onFechar, onE
 
   const descricao: Partial<Record<TipoAcaoDispositivo, string>> = {
     ALERTA: "A mensagem aparece na tela do usuário. A confirmação de leitura volta para você.",
-    BLOQUEAR: "A tela é travada na hora com a mensagem da equipe. Útil para notebook não devolvido, perdido ou uso indevido.",
+    BLOQUEAR: d.agenteReal && (d.tipo === "SMARTPHONE" || d.tipo === "TABLET") && d.agenteVersao.startsWith("web")
+      ? "A página do LabMaker no celular fica coberta até o Líder liberar. O celular em si continua funcionando: travar o aparelho inteiro exige gerenciamento (MDM)."
+      : "A tela é travada na hora com a mensagem da equipe. Útil para notebook não devolvido, perdido ou uso indevido.",
     DESBLOQUEAR: "O usuário volta a usar o dispositivo normalmente.",
     REINICIAR: "O usuário é avisado com 2 minutos de antecedência para salvar o trabalho.",
     SINCRONIZAR: "O agente baixa e reaplica a política agora, sem esperar o próximo ciclo.",

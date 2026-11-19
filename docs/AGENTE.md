@@ -19,7 +19,7 @@ node agente/agente.mjs --servidor http://IP-DO-SERVIDOR:3000 --inscricao <CÓDIG
 | Opção | Efeito |
 |---|---|
 | `--nome LM-NB-01` | Usa este nome — **assume o aparelho que o Líder já cadastrou à mão** (mesmo registro, mesmo histórico de empréstimos) |
-| `--permitir-bloqueio` | "Bloquear tela" trava a sessão de verdade (sem isso, só registra) |
+| `--permitir-bloqueio` | "Bloquear tela" trava a sessão de verdade **até o Líder liberar**: se o aluno destravar com a senha dele, o agente trava de novo em até 5 s (sem a opção, só registra) |
 | `--aplicar-politica` | Executáveis baixados em `~/Downloads` vão para a quarentena (sem isso, só reporta) |
 | `--tipo DESKTOP` | Estação fixa (não entra na lista de empréstimos) |
 | `--uma-vez` | Um check-in e sai (testes) |
@@ -65,7 +65,7 @@ Agente ─ POST /api/agente/checkin (Bearer lmk_…) a cada 15 s
 | Ação | No agente |
 |---|---|
 | Alerta | Notificação nativa (balão do Windows, Central de Notificações do macOS, `notify-send` no Linux) + caixa no terminal |
-| Bloquear / Desbloquear | Notifica; com `--permitir-bloqueio` trava a sessão (`LockWorkStation`, `pmset`, `loginctl`) |
+| Bloquear / Desbloquear | Notifica; com `--permitir-bloqueio` trava a sessão (`LockWorkStation`, `pmset`, `loginctl`) e continua travando a cada 5 s até chegar o Desbloquear |
 | Suporte remoto | Abre uma janela nativa **Permitir / Recusar** (PowerShell, `osascript`, `zenity`; sem interface, pergunta no terminal) — **exceto** quando o próprio usuário já autorizou ao pedir ajuda. Durante o compartilhamento, uma **janela fixa** avisa "sua tela está sendo vista" com o botão **Parar de compartilhar**. Captura 1 quadro por segundo (JPEG ~1280 px) e **só envia a imagem quando a tela mudou** (senão manda `{ mesmo: true }`), até o Líder encerrar, o usuário parar ou passarem 10 min |
 | Mensagem do Líder (chat) | Notificação + janela com campo de resposta (`zenity --entry`, `InputBox`, `display dialog`). A resposta vai para `POST /api/agente/chamados/mensagem` |
 | Instalar / remover app | Simulado (em produção: winget / Intune) |

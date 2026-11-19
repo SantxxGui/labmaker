@@ -7,7 +7,7 @@
  *   depois:   node agente/agente.mjs            (usa o token salvo em ~/.labmaker-agente.json)
  *
  * Opções:
- *   --permitir-bloqueio   a ação "Bloquear tela" trava a sessão de verdade (sem isso, é só registrada)
+ *   --permitir-bloqueio   "Bloquear tela" trava a sessão e volta a travar até o Líder liberar (sem isso, só registra)
  *   --aplicar-politica    executáveis baixados em ~/Downloads vão para a quarentena (sem isso, só são reportados)
  *   --nome LM-NB-01       usa este nome (assume o aparelho que o Líder já cadastrou manualmente)
  *   --tipo NOTEBOOK|DESKTOP
@@ -225,7 +225,7 @@ async function executar(a) {
       return ok("Exibido na tela do usuário");
     case "BLOQUEAR":
       await notificar("Dispositivo bloqueado", "Procure o Líder do espaço no balcão do espaço maker.");
-      if (flag("permitir-bloqueio")) { await travarSessao(); return ok("Sessão travada"); }
+      if (flag("permitir-bloqueio")) { await travarSessao(); return ok("Sessão travada até o Líder liberar"); }
       return ok("Bloqueio registrado (agente iniciado sem --permitir-bloqueio)");
     case "DESBLOQUEAR":
       await notificar("Dispositivo liberado", "Você já pode usar o computador.");
@@ -642,6 +642,8 @@ async function coletarLento() {
   [bateria, app] = await Promise.all([lerBateria(), lerAppAtivo()]);
 }
 
+let bloqueadoAgora = false;
+
 async function checkin(cfg) {
   const corpo = {
     agenteVersao: VERSAO,
@@ -671,11 +673,18 @@ async function checkin(cfg) {
     chamadoAtual = r.chamado ?? null;
   }
   if (r.mensagens?.length) receberMensagens(r.mensagens);
-  for (const a of r.acoes ?? []) {
+  const novas = r.acoes ?? [];
+  // Bloqueio até o Líder liberar: se a pessoa destravar o Windows com a senha dela, o agente
+  // trava de novo no próximo check-in (a cada 5 s enquanto estiver bloqueado).
+  if (r.bloqueado && flag("permitir-bloqueio") && !novas.some((a) => a.tipo === "BLOQUEAR" || a.tipo === "DESBLOQUEAR")) {
+    await travarSessao();
+  }
+  bloqueadoAgora = !!r.bloqueado;
+  for (const a of novas) {
     log(cor.azul, `↓ ação recebida: ${a.tipo}${a.titulo ? ` — ${a.titulo}` : a.parametro ? ` — ${a.parametro}` : ""}`);
     resultados.push(await executar(a));
   }
-  return { intervalo: (r.intervaloSeg ?? 15) * 1000, temResultado: resultados.length > 0 };
+  return { intervalo: bloqueadoAgora && flag("permitir-bloqueio") ? 5000 : (r.intervaloSeg ?? 15) * 1000, temResultado: resultados.length > 0 };
 }
 
 async function main() {
