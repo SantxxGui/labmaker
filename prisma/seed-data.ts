@@ -250,7 +250,7 @@ export type DadosDemo = ReturnType<typeof gerarDadosDemo>;
 export function gerarDadosIniciais(env: Record<string, string | undefined> = {}) {
   return {
     usuarios: [
-      { id: "usr_lider", nome: env.LIDER_NOME ?? "Líder do Espaço Maker", email: (env.LIDER_EMAIL ?? "lider@labmaker.dev").toLowerCase(), role: "LIDER" as const, cargo: "Orientador Educacional Digital (OED)" },
+      { id: "usr_lider", nome: env.LIDER_NOME ?? "Líder do Espaço Maker", email: (env.LIDER_EMAIL ?? "lider@labmaker.dev").toLowerCase(), role: "LIDER" as const, cargo: env.LIDER_CARGO ?? "Orientador Educacional Digital (OED)" },
     ],
     unidade: { id: "uni_emk", nome: env.LABMAKER_UNIDADE ?? "Espaço Maker", sigla: env.LABMAKER_SIGLA ?? "EMK", cidade: env.LABMAKER_CIDADE ?? "Campus", uf: (env.LABMAKER_UF ?? "SP").slice(0, 2) },
     // Modelos editáveis pelo Líder em Notebooks → Políticas (o agente precisa de uma política para aplicar)

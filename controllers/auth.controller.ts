@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { ApiError, autorizar, handler, ipDe, json } from "@/lib/api";
 import { homeFor } from "@/lib/permissions";
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/session";
-import { cadastroSchema, loginSchema } from "@/lib/validators";
+import { cadastroSchema, loginSchema, perfilSchema, trocarSenhaSchema } from "@/lib/validators";
 import { avaliarTentativas } from "@/lib/limite-login";
 import { AuditoriaModel } from "@/models/auditoria.model";
 import { TentativaLoginModel } from "@/models/tentativa-login.model";
@@ -84,5 +84,55 @@ export const AuthController = {
   me: handler(async () => {
     const s = await autorizar();
     return json({ usuario: { id: s.sub, nome: s.nome, email: s.email, role: s.role } });
+  }),
+
+  /** GET /api/auth/perfil — dados da própria conta (página Meu perfil) */
+  perfil: handler(async () => {
+    const s = await autorizar();
+    const usuario = await UsuarioModel.perfil(s.sub);
+    if (!usuario) throw new ApiError(404, "Conta não encontrada.");
+    return json({ usuario });
+  }),
+
+  /** PATCH /api/auth/perfil — qualquer pessoa muda o próprio nome (aparece na hora, sem novo login) */
+  atualizarPerfil: handler(async (req: Request) => {
+    const s = await autorizar();
+    const { nome } = perfilSchema.parse(await req.json());
+    const antes = s.nome;
+    const usuario = await UsuarioModel.renomear(s.sub, nome);
+    if (antes !== nome) {
+      await AuditoriaModel.registrar({
+        autor: { ...s, nome }, acao: "usuario.perfil", entidade: "usuario", entidadeId: s.sub, ip: ipDe(req),
+        resumo: `Mudou o próprio nome: "${antes}" → "${nome}"`,
+      });
+    }
+    return json({ usuario });
+  }),
+
+  /**
+   * POST /api/auth/senha — a própria pessoa troca a senha.
+   * Pede a senha atual (sessão esquecida aberta não basta), conta erro no mesmo limite do login,
+   * derruba as outras sessões da conta e renova a sessão de quem trocou.
+   */
+  trocarSenha: handler(async (req: Request) => {
+    const s = await autorizar();
+    const { senhaAtual, novaSenha } = trocarSenhaSchema.parse(await req.json());
+    const ip = ipDe(req);
+    const limite = avaliarTentativas(await TentativaLoginModel.contarFalhas(s.email, ip), new Date());
+    if (limite.bloqueado) throw new ApiError(429, `Muitas tentativas. Tente de novo em ${limite.esperaMin} min.`);
+
+    const conta = await UsuarioModel.buscarPorId(s.sub);
+    const ok = !!conta && (await bcrypt.compare(senhaAtual, conta.senhaHash));
+    if (!ok) {
+      await TentativaLoginModel.registrar(s.email, ip, false);
+      throw new ApiError(400, "Senha atual incorreta.");
+    }
+    const atualizado = await UsuarioModel.trocarSenha(s.sub, await bcrypt.hash(novaSenha, 10));
+    await abrirSessao(req, atualizado);
+    await AuditoriaModel.registrar({
+      autor: s, acao: "usuario.senha_trocada", entidade: "usuario", entidadeId: s.sub, ip,
+      resumo: `${s.nome} trocou a própria senha (outras sessões encerradas)`,
+    });
+    return json({ ok: true });
   }),
 };

@@ -83,12 +83,26 @@ export const laboratorioCreateSchema = z.object({
   descricao: opcional(200),
 });
 
+const nomePessoa = z.string().trim().min(3, "Nome muito curto.").max(80, "Nome muito longo (até 80 caracteres).");
+
 export const usuarioPatchSchema = z
   .object({
+    nome: nomePessoa.optional(),
     role: z.enum(ROLES, { message: "Perfil inválido." }).optional(),
     ativo: z.boolean().optional(),
   })
   .refine((d) => Object.keys(d).length > 0, "Nada para atualizar.");
+
+/** PATCH /api/auth/perfil — o próprio usuário muda o nome */
+export const perfilSchema = z.object({ nome: nomePessoa });
+
+/** POST /api/auth/senha — o próprio usuário troca a senha (pede a atual) */
+export const trocarSenhaSchema = z
+  .object({
+    senhaAtual: z.string().min(1, "Informe a senha atual."),
+    novaSenha: z.string().min(8, "A nova senha precisa de pelo menos 8 caracteres.").max(200),
+  })
+  .refine((d) => d.senhaAtual !== d.novaSenha, { message: "A nova senha precisa ser diferente da atual.", path: ["novaSenha"] });
 
 export const comandoSchema = z
   .object({

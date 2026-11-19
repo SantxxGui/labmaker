@@ -148,13 +148,13 @@ export function AppShell({ session, children }: { session: SessionPayload; child
                 <Stethoscope className="size-4" />
               </Link>
             )}
-            <span title={ROLE_LABEL[session.role]} className="hidden rounded-full border border-line px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-subtle xl:inline">
+            <span title={ROLE_LABEL[session.role]} className="hidden rounded-full border border-line px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-subtle 2xl:inline">
               {ROLE_LABEL[session.role].split(" (")[0]}
             </span>
-            <div className="flex items-center gap-2.5">
+            <Link href="/perfil" title="Meu perfil" aria-label="Meu perfil" className={cn("flex items-center gap-2.5 rounded-full py-0.5 pl-0.5 pr-1 transition-colors hover:bg-white/[0.06]", ativo("/perfil") && "bg-white/[0.06]")}>
               <Avatar nome={session.nome} className="size-7 text-[10px]" />
               <span className="hidden text-sm text-muted 2xl:inline">{session.nome}</span>
-            </div>
+            </Link>
             <button
               onClick={sair}
               disabled={saindo}

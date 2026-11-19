@@ -15,6 +15,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # o prisma.config exige a variável; o build não conecta no banco
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
+# site público: sem os atalhos "entrar como Líder" na tela de login (vale no build do Next)
+ARG NEXT_PUBLIC_SHOW_DEMO_LOGIN=false
+ENV NEXT_PUBLIC_SHOW_DEMO_LOGIN=$NEXT_PUBLIC_SHOW_DEMO_LOGIN
 RUN npx prisma generate && npx next build
 
 # 3) Execução — usuário sem privilégios

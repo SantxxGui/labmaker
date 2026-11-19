@@ -25,7 +25,7 @@ export const UsuarioController = {
 
     const alvo = await UsuarioModel.buscarPorId(id);
     if (!alvo) throw new ApiError(404, "Usuário não encontrado.");
-    if (id === s.sub) throw new ApiError(422, "Você não pode alterar o próprio perfil ou desativar a própria conta.");
+    if (id === s.sub) throw new ApiError(422, "Para mudar o seu próprio nome ou senha, use Meu perfil. Perfil e status da sua conta só outro Líder muda.");
 
     // Nunca deixar o espaço sem Líder ativo
     const deixaDeSerLider = alvo.role === "LIDER" && alvo.ativo && ((dados.role && dados.role !== "LIDER") || dados.ativo === false);
@@ -35,13 +35,14 @@ export const UsuarioController = {
 
     const usuario = await UsuarioModel.atualizar(id, dados);
     const mudancas = [
+      dados.nome && dados.nome !== alvo.nome ? `nome "${alvo.nome}" → "${dados.nome}"` : null,
       dados.role && dados.role !== alvo.role ? `perfil ${ROLE_LABEL[alvo.role]} → ${ROLE_LABEL[dados.role]}` : null,
       dados.ativo !== undefined && dados.ativo !== alvo.ativo ? (dados.ativo ? "conta reativada" : "conta desativada") : null,
     ].filter(Boolean);
     await AuditoriaModel.registrar({
       autor: s, acao: "usuario.atualizado", entidade: "usuario", entidadeId: id, ip: ipDe(req),
       resumo: `${alvo.nome}: ${mudancas.join(", ") || "sem alterações"}`,
-      dados: { de: { role: alvo.role, ativo: alvo.ativo }, para: dados },
+      dados: { de: { nome: alvo.nome, role: alvo.role, ativo: alvo.ativo }, para: dados },
     });
     return json({ usuario });
   }),
@@ -56,7 +57,7 @@ export const UsuarioController = {
     const { id } = await ctx.params;
     const alvo = await UsuarioModel.buscarPorId(id);
     if (!alvo) throw new ApiError(404, "Usuário não encontrado.");
-    if (id === s.sub) throw new ApiError(422, "Para trocar a sua própria senha, use o .env (LIDER_SENHA) ou peça a outro Líder.");
+    if (id === s.sub) throw new ApiError(422, "Para trocar a sua própria senha, use Meu perfil.");
 
     const senhaTemporaria = gerarSenhaTemporaria();
     await UsuarioModel.redefinirSenha(id, await bcrypt.hash(senhaTemporaria, 10));

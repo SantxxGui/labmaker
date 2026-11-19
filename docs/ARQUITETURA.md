@@ -84,7 +84,7 @@ Três camadas, todas automatizadas e rodando no CI (`.github/workflows/ci.yml`) 
 | Camada | Comando | O que prova |
 |---|---|---|
 | Unitários (91) | `npm test` | Regras puras: horários, fuso, calibração, permissões, telemetria, agente, empréstimo, limite de login, tela remota, chamados, automações (lembrete, atraso, fechamento, abertura), agendador, modo TV (situação das máquinas e privacidade) |
-| Ponta a ponta (91) | `npm run test:api` | Perfis e 403, o Líder cuida de tudo, aluno reserva o que acabou de ser cadastrado, empréstimo, agente (inscrição, token, check-in), suporte remoto (autorização, quadros, encerramento, 403 do aluno), SSE da tela, **pedido de ajuda → chat → tela pré-autorizada → encerramento**, lembrete automático sem repetição, índice anti-duplicidade, diagnóstico, modo TV sem e-mail, teste de fechamento, push, celular pelo navegador, cookie Secure em HTTPS, redefinição de senha, revogação de sessão, força bruta → 429, cabeçalhos, CSV |
+| Ponta a ponta (105) | `npm run test:api` | Perfis e 403, o Líder cuida de tudo, aluno reserva o que acabou de ser cadastrado, empréstimo, agente (inscrição, token, check-in), suporte remoto (autorização, quadros, encerramento, 403 do aluno), SSE da tela, **pedido de ajuda → chat → tela pré-autorizada → encerramento**, lembrete automático sem repetição, índice anti-duplicidade, diagnóstico, modo TV sem e-mail, teste de fechamento, push, celular pelo navegador, cookie Secure em HTTPS, redefinição de senha, Meu perfil (nome e troca de senha derrubando os outros aparelhos), revogação de sessão, força bruta → 429, cabeçalhos, CSV |
 | Concorrência (4) | `npm run test:concorrencia` | 50 pedidos simultâneos no mesmo horário → 1 reserva, 49 × 409, nenhum 500 |
 
 ## Evolução prevista

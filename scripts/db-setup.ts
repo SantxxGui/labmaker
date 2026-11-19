@@ -13,12 +13,26 @@ async function main() {
     const db = new pg.Client({ connectionString: url });
     try {
       await db.connect();
-      const { rows } = await db.query("SELECT to_regclass('public.usuarios') IS NOT NULL AS existe");
+      // config_sistema veio na migration mais nova (0007): se usuarios existe e ela não, o banco é de uma versão antiga
+      const { rows } = await db.query("SELECT to_regclass('public.usuarios') IS NOT NULL AS existe, to_regclass('public.config_sistema') IS NOT NULL AS atual");
       await db.end();
+      if (rows[0].existe && !rows[0].atual) {
+        throw Object.assign(new Error("O banco tem tabelas de uma versão antiga do LabMaker.\n  → No seu PC, com o .env apontando para este banco, rode: npm run db:reset (apaga e recria as 18 tabelas)."), { definitivo: true });
+      }
       if (rows[0].existe) return console.log("✔ Banco já preparado — nada a fazer.");
       break;
     } catch (e) {
       await db.end().catch(() => {});
+      if ((e as { definitivo?: boolean }).definitivo) throw e;
+      // Senha ou usuário errado não se resolve esperando — e insistir faz o Supabase bloquear novas
+      // conexões por alguns minutos (ECIRCUITBREAKER). Para na hora, com a explicação.
+      const err = e as { code?: string; message?: string };
+      if (err.code === "28P01" || err.code === "28000" || /password authentication|authentication failures|ECIRCUITBREAKER|Tenant or user not found/i.test(err.message ?? "")) {
+        throw new Error(`${err.message}\n  → Usuário ou senha da DATABASE_URL errados. No Supabase use Connect → Session pooler (usuário "postgres.SEU_PROJETO") e a senha do banco; caracteres especiais na senha precisam de código (@ = %40, # = %23). Se apareceu "too many authentication failures", espere uns 5 minutos depois de corrigir.`);
+      }
+      if (err.message?.includes("ENETUNREACH")) {
+        throw new Error(`${err.message}\n  → Endereço só IPv6: use a URL do "Session pooler" do Supabase (…pooler.supabase.com), não a "Direct connection".`);
+      }
       if (tentativa >= 20) throw e;
       console.log(`… aguardando o PostgreSQL (${tentativa})`);
       await new Promise((r) => setTimeout(r, 1500));
