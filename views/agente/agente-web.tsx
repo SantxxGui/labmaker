@@ -469,7 +469,7 @@ export function AgenteWeb({ codigoInicial }: { codigoInicial: string }) {
           </div>
           <label className="block space-y-1.5">
             <span className="text-[12.5px] font-medium">Código de inscrição</span>
-            <input value={codigo} onChange={(e) => setCodigo(e.target.value)} required minLength={20} placeholder="Escaneie o QR code ou cole o código"
+            <input value={codigo} onChange={(e) => setCodigo(e.target.value)} required minLength={6} placeholder="Escaneie o QR code ou digite o código (ex.: K7P2QX)"
               className="h-10 w-full rounded-lg border border-line-strong bg-black/30 px-3 font-mono text-[12px] focus:border-accent focus:outline-none" />
           </label>
           <label className="block space-y-1.5">

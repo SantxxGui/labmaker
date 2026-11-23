@@ -59,7 +59,7 @@ export const ROTAS: [Metodo, string, Op][] = [
   ["post", "/api/dispositivos/{id}/tela/encerrar", { tag: "Notebooks", resumo: "Encerrar o compartilhamento de tela", perm: "dispositivo:comandar" }],
   ["get", "/api/dispositivos/{id}/tela/eventos", { tag: "Notebooks", resumo: "Tela ao vivo por Server-Sent Events (estado, quadro, início, fim; pulso a cada 15 s)", perm: "dispositivo:comandar", respostas: { 200: "text/event-stream" } }],
   ["post", "/api/dispositivos/{id}/atendimento", { tag: "Atendimento", resumo: "Líder inicia uma conversa com o aparelho (abre um chamado já em atendimento)", perm: "dispositivo:comandar", respostas: { 201: "Chamado criado", 200: "Já havia um chamado aberto" } }],
-  ["post", "/api/dispositivos/inscricao", { tag: "Agente", resumo: "Gerar código de inscrição (válido 2 h)", perm: "dispositivo:cadastrar", corpo: v.inscricaoSchema }],
+  ["post", "/api/dispositivos/inscricao", { tag: "Agente", resumo: "Gerar código de inscrição de 6 letras (válido 2, 12 ou 24 h) e o comando de instalação", perm: "dispositivo:cadastrar", corpo: v.inscricaoSchema }],
   ["get", "/api/politicas", { tag: "Notebooks", resumo: "Políticas de uso", perm: "dispositivo:ver" }],
   ["patch", "/api/politicas/{id}", { tag: "Notebooks", resumo: "Alterar política (downloads, USB, sites, apps)", perm: "dispositivo:politicas", corpo: v.politicaPatchSchema }],
 

@@ -13,7 +13,7 @@ A aplicação **nasce zerada**: nenhuma máquina, área, notebook ou reserva —
 | **Máquinas** | Telemetria, alarmes, câmera e comandos seguros via gateway (simulado; mesmo formato do real) |
 | **Notebooks e celulares** | **Agente real** (`agente/agente.mjs`, Node sem dependências): métricas, avisos nativos, bloqueio e **suporte remoto com a tela ao vivo** (com autorização e aviso fixo na tela) · inicia com o computador · **agente pelo navegador** para celulares (QR code, instalável como app, notificação push) · empréstimo com prazo |
 | **Atendimento** | Aluno toca em **Pedir ajuda** (notebook ou celular) → fila do Líder com **chat** e tela pré-autorizada · lembrete de devolução 15 min antes, aviso de atraso e **alarme que apita 1 min depois do prazo** até a devolução · espaço **trava sozinho às 20h** e destrava às 8h |
-| **Qualidade** | 95 testes unitários · 115 verificações ponta a ponta · teste de concorrência (50 pedidos simultâneos → 1 reserva) · CI no GitHub Actions · Docker |
+| **Qualidade** | 104 testes unitários · 125 verificações ponta a ponta · teste de concorrência (50 pedidos simultâneos → 1 reserva) · CI no GitHub Actions · Docker |
 
 ## Como rodar
 
@@ -45,12 +45,16 @@ Quer o espaço cheio para demonstrar? `npm run db:demo` carrega 8 máquinas, 15 
 
 ## Agente nos notebooks (real)
 
-Em **Notebooks → Adicionar aparelho → Computador / VM**, o Líder gera um código (vale 2 h). No computador:
+Em **Notebooks → Adicionar aparelho → Computador / VM**, o Líder marca o que o LabMaker pode fazer no computador (bloquear, reiniciar, iniciar com o PC) e gera um **código de 6 letras** (vale 2 h, 12 h ou 1 dia; serve para vários computadores). No computador, **um comando só**:
 
 ```bash
-curl -o agente.mjs http://IP-DO-SERVIDOR:3000/api/agente/script
-node agente.mjs --servidor http://IP-DO-SERVIDOR:3000 --inscricao <CÓDIGO>
+# Windows: Win+R (ou Prompt de Comando), cole e Enter
+powershell -c "irm https://SEU-SITE/i/K7P2QX|iex"
+# Linux / macOS
+curl -fsSL https://SEU-SITE/i/K7P2QX | sh
 ```
+
+Ele baixa o agente, inscreve o computador com as opções marcadas e liga o início automático (no Windows, instala o Node.js pelo `winget` se faltar).
 
 Em segundos o computador aparece com o selo **real**: CPU, memória, disco e app em uso medidos de verdade; avisos chegam como notificação nativa (Windows, macOS, Linux). Com **Suporte remoto**, o usuário autoriza numa janela e o Líder vê a **tela ao vivo** (só visualização, até 10 min); enquanto isso, uma janela fixa avisa "sua tela está sendo vista" com o botão **Parar de compartilhar**.
 
@@ -73,8 +77,8 @@ Passo a passo da demonstração com **VM e celular**: [`docs/DEMO-VM-CELULAR.md`
 | `npm run db:reset` | Apaga, recria (migrations) e cria o espaço **zerado** |
 | `npm run db:demo` | Igual, mas com o espaço de **exemplo** |
 | `npm run db:setup` | Prepara o banco **só se estiver vazio** (deploy/Docker) |
-| `npm test` | 95 testes unitários das regras de negócio |
-| `npm run test:api` | 115 verificações ponta a ponta contra o servidor rodando |
+| `npm test` | 104 testes unitários das regras de negócio |
+| `npm run test:api` | 125 verificações ponta a ponta contra o servidor rodando |
 | `npm run test:concorrencia` | 5 alunos × 10 pedidos simultâneos no mesmo horário → exatamente 1 reserva |
 | `npm run typecheck` | Checagem de tipos |
 | `npm run agente -- --servidor … --inscricao …` | Roda o agente neste computador |

@@ -759,7 +759,7 @@ async function main() {
   if (args.includes("--instalar-servico")) { await instalarServico(); if (!codigo) process.exit(0); }
   const cfg = lerConfig();
   if (!cfg?.token) {
-    console.log(`\nPrimeira vez? Gere o código em ${cor.neg}Notebooks → Adicionar aparelho → Com agente${cor.fim} e rode:\n  node agente.mjs --servidor http://IP:3000 --inscricao <CÓDIGO>\n`);
+    console.log(`\nPrimeira vez? Em ${cor.neg}Notebooks → Adicionar aparelho → Computador${cor.fim} gere o código e use o comando de instalação,\nou rode: node agente.mjs --servidor https://SEU-SITE --inscricao <CÓDIGO>\n`);
     process.exit(1);
   }
   // Opções passadas agora ficam salvas: da próxima vez (ou no início automático) basta "node agente.mjs"

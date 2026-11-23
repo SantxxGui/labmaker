@@ -61,6 +61,37 @@ async function main() {
   const pols = (await lider.get("/api/politicas")).json?.politicas ?? [];
   const cod = await lider.post("/api/dispositivos/inscricao", { politicaId: pols[0]?.id, laboratorioId: null });
   confere("Líder gera código de inscrição", cod.status === 201 || cod.status === 200);
+  confere("código de inscrição é curto (6 letras) e vem com o comando de uma linha",
+    /^[A-HJ-KM-NP-Z2-9]{6}$/.test(cod.json?.codigo ?? "") && /^powershell -c "irm .+\/i\/[A-Z0-9]{6}\|iex"$/.test(cod.json?.comandos?.windows ?? ""));
+  confere("sem escolher, o código vale 12 h", Math.abs(new Date(cod.json!.validoAte).getTime() - Date.now() - 12 * 3_600_000) < 60_000);
+  const umDia = await lider.post("/api/dispositivos/inscricao", { politicaId: pols[0]?.id, validadeHoras: 24 });
+  confere("Líder escolhe 1 dia de validade", umDia.status === 201 && Math.abs(new Date(umDia.json!.validoAte).getTime() - Date.now() - 24 * 3_600_000) < 60_000);
+  confere("validade fora das opções (2, 12, 24 h) → 422", (await lider.post("/api/dispositivos/inscricao", { validadeHoras: 72 })).status === 422);
+  // vencido: o mesmo convite com expiraEm no passado deixa de valer
+  const chaveDia = `convite:${umDia.json!.codigo}`;
+  await import("dotenv/config");
+  const { prisma: bd } = await import("../lib/prisma");
+  const linha = await bd.configSistema.findUnique({ where: { chave: chaveDia } });
+  await bd.configSistema.update({ where: { chave: chaveDia }, data: { valor: JSON.stringify({ ...JSON.parse(linha!.valor), expiraEm: new Date(Date.now() - 1000).toISOString() }) } });
+  confere("código vencido não instala mais", (await (await fetch(`${BASE}/i/${umDia.json!.codigo}`, { headers: { "User-Agent": "curl/8.5.0", "X-Forwarded-For": "203.0.113.10" } })).text()).includes("vencido"));
+  // ── Instalação em um comando: /i/CÓDIGO devolve o script certo para quem pede
+  const instalador = async (codigo: string, ua: string, ip = "203.0.113.7") => {
+    const r = await fetch(`${BASE}/i/${codigo}`, { headers: { "User-Agent": ua, "X-Forwarded-For": ip } });
+    return { status: r.status, texto: await r.text() };
+  };
+  const ps = await instalador(cod.json!.codigo, "Mozilla/5.0 (Windows NT; Windows NT 10.0; pt-BR) WindowsPowerShell/5.1.26100.1");
+  confere("Windows (irm|iex) recebe o script PowerShell com código e opções", ps.status === 200 && ps.texto.includes(`$codigo = '${cod.json!.codigo}'`) && ps.texto.includes("'--permitir-bloqueio'") && ps.texto.includes("'--instalar-servico'"));
+  const sh = await instalador(cod.json!.codigo.toLowerCase(), "curl/8.5.0");
+  confere("Linux/macOS (curl|sh) recebe o script sh (código em minúsculas também vale)", sh.status === 200 && sh.texto.startsWith("#!/bin/sh") && sh.texto.includes(`CODIGO='${cod.json!.codigo}'`));
+  confere("pelo navegador, /i/CÓDIGO explica como usar", (await instalador(cod.json!.codigo, "Mozilla/5.0 Chrome/131")).texto.includes("Win+R"));
+  const errado = await instalador("ZZZZZZ", "WindowsPowerShell/5.1", "203.0.113.8");
+  confere("código inexistente: o PowerShell mostra o erro em vez de um 404 mudo", errado.status === 200 && errado.texto.includes("invalido ou vencido"));
+  // quem tenta adivinhar códigos é barrado depois de 5 erros (por IP)
+  for (let i = 0; i < 4; i++) await instalador(`ZZZZZ${"ABCD"[i]}`, "curl/8.5.0", "203.0.113.9");
+  await instalador("ZZZZZE", "curl/8.5.0", "203.0.113.9");
+  const barrado = await fetch(`${BASE}/api/agente/inscrever`, { method: "POST", headers: { "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.9" },
+    body: JSON.stringify({ codigo: cod.json!.codigo, hostname: "T-BRUTO", so: "LINUX", versaoSo: "x", numeroSerie: `AG-${unico()}`, agenteVersao: "4.6.0", fabricante: "T", modelo: "T" }) });
+  confere("5 códigos errados seguidos → o IP espera 15 min (429), mesmo acertando depois", barrado.status === 429);
   const ag = await anon.post("/api/agente/inscrever", { codigo: cod.json!.codigo, hostname: `T-AG-${unico().slice(0, 6)}`, so: "LINUX", versaoSo: "Linux teste", numeroSerie: `AG-${unico()}`, agenteVersao: "4.6.0", fabricante: "Teste", modelo: "VM" });
   confere("agente se inscreve com o código", ag.status === 201 || ag.status === 200);
   const tk = ag.json!.token as string;
