@@ -2,17 +2,24 @@
 
 Dois agentes, o mesmo protocolo:
 
-- **`agente/agente.mjs`** — um único arquivo, Node.js 18+ **sem dependências**, para computadores (Windows, macOS, Linux — inclusive uma VM). Baixe direto do servidor: `curl -o agente.mjs http://SERVIDOR:3000/api/agente/script`.
+- **`agente/agente.mjs`** — um único arquivo, Node.js 18+ **sem dependências**, para computadores (Windows, macOS, Linux — inclusive uma VM). Instalado por um comando curto (abaixo) ou baixado direto: `curl -o agente.mjs http://SERVIDOR:3000/api/agente/script`.
 - **Página `/agente`** — o navegador vira o agente, para **celulares e tablets** (inscrição por QR code). Ver [`DEMO-VM-CELULAR.md`](DEMO-VM-CELULAR.md).
 
 ## Como instalar
 
-1. O Líder abre **Notebooks → Adicionar aparelho → Com agente**, escolhe a política e a área e clica em *Gerar código* (vale 2 h).
-2. No computador, com Node instalado e a pasta `agente/` copiada:
+1. O Líder abre **Notebooks → Adicionar aparelho → Computador / VM**, escolhe a política e a área, marca o que o LabMaker pode fazer (bloquear, reiniciar, iniciar com o PC, quarentena) e clica em *Gerar código*. Sai um **código de 6 letras** (sem 0/O, 1/I/L), válido por 2 h e para quantos computadores precisar.
+2. No computador, **um comando só**:
 
 ```bash
-node agente/agente.mjs --servidor http://IP-DO-SERVIDOR:3000 --inscricao <CÓDIGO>
+# Windows — Win+R, Prompt de Comando ou PowerShell:
+powershell -c "irm https://SEU-SITE/i/K7P2QX|iex"
+# Linux / macOS:
+curl -fsSL https://SEU-SITE/i/K7P2QX | sh
 ```
+
+`/i/CÓDIGO` devolve o script certo para quem pede (PowerShell ou sh): baixa o agente para `%LOCALAPPDATA%\LabMaker` (ou `~/.labmaker`), inscreve com as opções marcadas e liga o início automático. No Windows, se faltar o Node.js, instala pelo `winget`. Se algo falhar, a janela mostra o erro e espera um Enter. O JWT de inscrição fica guardado no servidor atrás do código curto, e **5 códigos errados seguidos barram o IP por 15 min** — adivinhar um código não é viável.
+
+Jeito manual (sem PowerShell): `node agente.mjs --servidor http://IP-DO-SERVIDOR:3000 --inscricao K7P2QX --permitir-bloqueio --permitir-reinicio --instalar-servico`.
 
 3. Pronto: o token fica em `~/.labmaker-agente.json` (permissão 600). Das próximas vezes basta `node agente/agente.mjs`.
 

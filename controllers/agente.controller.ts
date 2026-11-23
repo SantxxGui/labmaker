@@ -9,7 +9,7 @@
  *     manda telemetria, eventos e resultados; recebe a política e as ações pendentes.
  */
 import "server-only";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { INTERVALO_CHECKIN_S, efeitoAcao, eventoDaAcao } from "@/lib/agente";
 import { alarmeDevolucao } from "@/lib/emprestimo";
 
@@ -23,6 +23,10 @@ import { INTERVALO_QUADRO_MS, TAMANHO_MAX_BYTES, TelaStore, avaliarQuadro } from
 import { ChamadoModel } from "@/models/chamado.model";
 import { agenteChamadoSchema, agenteCheckinSchema, agenteInscreverSchema, agenteMensagemSchema, agentePushSchema, inscricaoSchema, telaQuadroSchema } from "@/lib/validators";
 import { AgenteModel } from "@/models/agente.model";
+import { ConviteModel, type Convite } from "@/models/convite.model";
+import { TentativaLoginModel } from "@/models/tentativa-login.model";
+import { OPCOES_PADRAO, VALIDADE_CONVITE_MIN, comandosInstalacao, gerarCodigoCurto, normalizarCodigo, scriptErro, scriptPara, scriptUnix, scriptWindows, servidorSeguro } from "@/lib/convite";
+import { avaliarTentativas } from "@/lib/limite-login";
 import { AuditoriaModel } from "@/models/auditoria.model";
 import { DispositivoModel } from "@/models/dispositivo.model";
 
@@ -38,23 +42,86 @@ async function dispositivoDoToken(req: Request) {
   return d;
 }
 
+/** Endereço público deste servidor, como o navegador do Líder o vê (Render: https://….onrender.com). */
+function origemDe(req: Request) {
+  const u = new URL(req.url);
+  const proto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || u.protocol.replace(":", "");
+  const host = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || req.headers.get("host") || u.host;
+  return `${proto}://${host}`;
+}
+
+/**
+ * Código curto (K7P2QX) → convite guardado. Cada código errado conta no limite do IP (5 em 15 min),
+ * então adivinhar um código de 6 letras (≈ 900 milhões de combinações) não é viável.
+ * Um código longo (o JWT de antes) segue aceito e não passa por aqui.
+ */
+async function conviteDoCodigo(curto: string, ip: string | null): Promise<Convite | null> {
+  const chave = `convite@${ip ?? "sem-ip"}`;
+  const lim = avaliarTentativas(await TentativaLoginModel.contarFalhas(chave, null), new Date());
+  if (lim.bloqueado) throw new ApiError(429, `Muitos códigos errados seguidos. Tente de novo em ${lim.esperaMin} min.`);
+  const convite = await ConviteModel.buscar(curto);
+  if (!convite) await TentativaLoginModel.registrar(chave, null, false);
+  return convite;
+}
+
 export const AgenteController = {
   /** POST /api/dispositivos/inscricao — gera o código para instalar o agente num computador */
   gerarInscricao: handler(async (req: Request) => {
     const s = await autorizar("dispositivo:cadastrar");
-    const { politicaId = null, laboratorioId = null } = inscricaoSchema.parse(await req.json().catch(() => ({})));
-    const codigo = await assinarInscricao({ politicaId, laboratorioId, por: s.sub });
+    const corpo = inscricaoSchema.parse(await req.json().catch(() => ({})));
+    const { politicaId = null, laboratorioId = null } = corpo;
+    const servidor = servidorSeguro(corpo.servidor || origemDe(req));
+    if (!servidor) throw new ApiError(422, "Endereço do servidor inválido. Use algo como https://seu-site.onrender.com ou http://192.168.0.10:3000.");
+    const opcoes = { ...OPCOES_PADRAO, ...corpo.opcoes };
+    const jwt = await assinarInscricao({ politicaId, laboratorioId, por: s.sub });
+    // código curto de 6 letras guardado no servidor; sorteia de novo no caso (raríssimo) de repetir
+    let codigo = "";
+    for (let i = 0; i < 5 && !codigo; i++) {
+      const c = gerarCodigoCurto(randomInt);
+      if (await ConviteModel.criar(c, { jwt, servidor, opcoes })) codigo = c;
+    }
+    if (!codigo) throw new ApiError(503, "Não foi possível gerar o código. Tente de novo.");
     await AuditoriaModel.registrar({
       autor: s, acao: "dispositivo.inscricao_gerada", entidade: "dispositivo", entidadeId: null, ip: ipDe(req),
-      resumo: "Gerou um código de inscrição de computador (válido por 2 h)",
+      resumo: `Gerou o código de inscrição ${codigo} (válido por 2 h)`,
     });
-    return json({ codigo, validoAte: new Date(Date.now() + 2 * 3_600_000).toISOString() }, 201);
+    return json({ codigo, servidor, opcoes, comandos: comandosInstalacao(servidor, codigo), validoAte: new Date(Date.now() + VALIDADE_CONVITE_MIN * 60_000).toISOString() }, 201);
   }),
+
+  /**
+   * GET /i/:codigo — instalação em um comando. Devolve o script certo para quem pediu:
+   * PowerShell (irm … | iex) ou sh (curl … | sh). Pelo navegador, mostra como usar.
+   */
+  instalar: async (req: Request, ctx: { params: Promise<{ codigo: string }> }) => {
+    const texto = (corpo: string, status = 200) =>
+      new Response(corpo, { status, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+    const tipo = scriptPara(req.headers.get("user-agent"));
+    const { codigo: bruto } = await ctx.params;
+    const codigo = normalizarCodigo(decodeURIComponent(bruto));
+    let convite: Convite | null = null;
+    try {
+      convite = codigo ? await conviteDoCodigo(codigo, ipDe(req)) : null;
+    } catch (e) {
+      const motivo = e instanceof ApiError ? e.message : "Erro ao consultar o código.";
+      return tipo ? texto(scriptErro(tipo, motivo)) : texto(motivo, 429);
+    }
+    if (!convite || !codigo) {
+      const motivo = "Código de instalação inválido ou vencido (vale 2 h). Gere outro em Notebooks > Adicionar aparelho > Computador.";
+      // 200 com um script que mostra o erro: com 404 o PowerShell só diria "(404) Não Localizado"
+      return tipo ? texto(scriptErro(tipo, motivo)) : texto(motivo, 404);
+    }
+    if (tipo === "powershell") return texto(scriptWindows(convite.servidor, codigo, convite.opcoes));
+    if (tipo === "sh") return texto(scriptUnix(convite.servidor, codigo, convite.opcoes));
+    const c = comandosInstalacao(convite.servidor, codigo);
+    return texto(`Instalar o agente LabMaker (código ${codigo}, vale 2 h)\n\nWindows: aperte Win+R, cole e dê Enter:\n  ${c.windows}\n\nLinux / macOS, no terminal:\n  ${c.unix}\n`);
+  },
 
   /** POST /api/agente/inscrever — o agente troca o código por um token próprio */
   inscrever: handler(async (req: Request) => {
     const dados = agenteInscreverSchema.parse(await req.json());
-    const convite = await verificarInscricao(dados.codigo);
+    const curto = normalizarCodigo(dados.codigo);
+    const jwt = curto ? (await conviteDoCodigo(curto, ipDe(req)))?.jwt : dados.codigo;
+    const convite = jwt ? await verificarInscricao(jwt) : null;
     if (!convite) throw new ApiError(401, "Código de inscrição inválido ou expirado. Gere outro na tela de Notebooks.");
 
     const token = `lmk_${randomBytes(24).toString("base64url")}`;

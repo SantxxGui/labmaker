@@ -8,6 +8,8 @@ import { Check, Copy, MonitorDown, Smartphone, TerminalSquare, TriangleAlert } f
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { OPCOES_PADRAO, type OpcoesInstalacao } from "@/lib/convite";
 import { Segmented } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SO_LABEL, TIPO_DISPOSITIVO_LABEL } from "@/lib/labels";
@@ -16,7 +18,8 @@ import type { DispositivoPainelDTO, LaboratorioDTO, PoliticaDTO, SistemaOperacio
 /**
  * Adicionar aparelho, de três jeitos:
  *  - manual: só o cadastro (pronto para empréstimo);
- *  - agente: código de 2 h + comando do agente/agente.mjs (computador, inclusive uma VM);
+ *  - agente: código curto de 2 h + UM comando (Win+R no Windows, curl | sh no Linux/macOS) que
+ *    baixa o agente, inscreve o computador com as opções marcadas e liga o início automático;
  *  - celular: o mesmo código num QR code que abre /agente no navegador do celular.
  * O agente troca o código por um token próprio (o servidor guarda só o hash).
  */
@@ -34,6 +37,9 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
   const [codigo, setCodigo] = useState<string | null>(null);
   const [gerando, setGerando] = useState(false);
   const [copiado, setCopiado] = useState(false);
+  const [opcoes, setOpcoes] = useState<OpcoesInstalacao>(OPCOES_PADRAO);
+  const [sistema, setSistema] = useState<"windows" | "unix">("windows");
+  const [comandos, setComandos] = useState<{ windows: string; unix: string; manual: string } | null>(null);
 
   // Endereço que o OUTRO aparelho usa para chegar no servidor (localhost só funciona nesta máquina)
   const origem = typeof window !== "undefined" ? window.location.origin : "";
@@ -58,7 +64,7 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
   }, [aberto]);
   const base = servidor.replace(/\/$/, "");
   const ehLocal = /\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(base);
-  const comando = codigo ? `node agente.mjs --servidor ${base} --inscricao ${codigo}` : "";
+  const comando = comandos ? (sistema === "windows" ? comandos.windows : comandos.unix) : "";
   const linkCelular = codigo ? `${base}/agente?codigo=${encodeURIComponent(codigo)}` : "";
 
   // QR code do link (gerado no navegador, sem serviço externo)
@@ -75,11 +81,12 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
       const r = await fetch("/api/dispositivos/inscricao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ politicaId, laboratorioId: laboratorioId === "nenhum" ? null : laboratorioId }),
+        body: JSON.stringify({ politicaId, laboratorioId: laboratorioId === "nenhum" ? null : laboratorioId, servidor: base, opcoes }),
       });
       const j = await r.json();
       if (!r.ok) return toast.error(j.error ?? "Não foi possível gerar o código.");
       setCodigo(j.codigo);
+      setComandos(j.comandos);
     } finally {
       setGerando(false);
     }
@@ -104,9 +111,9 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
     }
   }
 
-  async function copiar() {
+  async function copiar(texto = modo === "celular" ? linkCelular : comando) {
     try {
-      await navigator.clipboard.writeText(modo === "celular" ? linkCelular : comando);
+      await navigator.clipboard.writeText(texto);
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
     } catch {
@@ -115,7 +122,7 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
   }
 
   return (
-    <Dialog open={aberto} onOpenChange={(o) => { setAberto(o); if (!o) setCodigo(null); }}>
+    <Dialog open={aberto} onOpenChange={(o) => { setAberto(o); if (!o) { setCodigo(null); setComandos(null); } }}>
       <Button variant="secondary" onClick={() => setAberto(true)}><MonitorDown />Adicionar aparelho</Button>
       <DialogContent className="max-w-xl">
         <DialogHeader>
@@ -124,7 +131,7 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
             {modo === "manual"
               ? "Cadastre o notebook ou tablet pelo patrimônio: ele já entra na lista de empréstimos. Depois, se quiser monitorar, instale o agente com o mesmo nome."
               : modo === "agente"
-                ? "Para computadores (inclusive uma VM): um programa leve em Node.js faz check-in a cada 15 s, mostra avisos, trava a tela e compartilha a tela quando o usuário autoriza. O código vale 2 h."
+                ? "Para computadores (inclusive uma VM): um comando só instala o agente, um programa leve em Node.js que faz check-in a cada 15 s, mostra avisos, trava a tela e mostra a tela quando o usuário autoriza."
                 : "Para celulares e tablets: a pessoa escaneia o QR code e o navegador vira o agente. Recebe avisos (com confirmação de leitura) e bloqueio. O código vale 2 h."}
           </DialogDescription>
         </DialogHeader>
@@ -217,6 +224,24 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
                   : "“localhost” só funciona neste computador. Numa VM do VirtualBox (NAT) use 10.0.2.2; em outro computador, o IP da rede."}
               </p>
             )}
+            {modo === "agente" && (
+              <div className="rounded-xl border border-line px-3 py-1.5">
+                {([
+                  ["bloqueio", "Bloquear a tela de verdade", "Trava o computador e trava de novo até você liberar"],
+                  ["reinicio", "Reiniciar pelo painel", "Com 1 minuto de aviso na tela"],
+                  ["iniciarComPc", "Iniciar junto com o computador", "E cria o atalho “Pedir ajuda ao Líder” na área de trabalho"],
+                  ["politica", "Quarentena de downloads", "Programas baixados vão para a quarentena"],
+                ] as const).map(([k, titulo, desc]) => (
+                  <label key={k} className="flex cursor-pointer items-center justify-between gap-3 py-1.5">
+                    <span>
+                      <span className="block text-[13px] text-fg">{titulo}</span>
+                      <span className="block text-[11.5px] text-subtle">{desc}</span>
+                    </span>
+                    <Switch checked={opcoes[k]} onCheckedChange={(v) => setOpcoes((o) => ({ ...o, [k]: v }))} aria-label={titulo} />
+                  </label>
+                ))}
+              </div>
+            )}
             <div className="flex justify-end">
               <Button onClick={gerar} loading={gerando} disabled={!/^https?:\/\/./.test(base)}>{modo === "celular" ? "Gerar QR code" : "Gerar código de inscrição"}</Button>
             </div>
@@ -235,7 +260,7 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
             </div>
             <div className="relative rounded-xl border border-line-strong bg-black/50 p-3 pr-12">
               <code className="block max-h-20 overflow-auto break-all font-mono text-[11px] leading-relaxed text-muted">{linkCelular}</code>
-              <button onClick={copiar} aria-label="Copiar link" className="absolute right-2 top-2 grid size-8 place-items-center rounded-md text-subtle hover:bg-white/10 hover:text-fg">
+              <button onClick={() => copiar()} aria-label="Copiar link" className="absolute right-2 top-2 grid size-8 place-items-center rounded-md text-subtle hover:bg-white/10 hover:text-fg">
                 {copiado ? <Check className="size-4 text-ok" /> : <Copy className="size-4" />}
               </button>
             </div>
@@ -246,28 +271,45 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
           </motion.div>
         ) : (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-            <ol className="space-y-2 text-[13px] text-muted">
-              <li>
-                <span className="font-medium text-fg">1.</span> No computador (ou na VM), com Node.js 18+, baixe o agente:
-                <code className="mt-1.5 block rounded-lg border border-line bg-black/40 px-2.5 py-1.5 font-mono text-[11.5px] text-fg">curl -o agente.mjs {base}/api/agente/script</code>
-                <span className="mt-1 block text-[11.5px] text-subtle">No Windows use <span className="font-mono">curl.exe</span>.</span>
-              </li>
-              <li><span className="font-medium text-fg">2.</span> Na mesma pasta, rode (acrescente <code className="font-mono text-fg">--nome VM-01</code> para escolher o nome, ou o de um aparelho já cadastrado):</li>
-            </ol>
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-line bg-white/[0.03] px-4 py-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-subtle">Código</p>
+                <p className="font-mono text-2xl font-semibold tracking-[0.25em] text-fg" data-codigo>{codigo}</p>
+              </div>
+              <p className="max-w-[15rem] text-right text-[12px] text-subtle">Vale 2 h e serve para quantos computadores você quiser.</p>
+            </div>
+            <Segmented value={sistema} onChange={setSistema} options={[{ value: "windows", label: "Windows" }, { value: "unix", label: "Linux / macOS" }]} />
+            <p className="text-[13px] text-muted">
+              {sistema === "windows"
+                ? <>No computador, aperte <Tecla>Win</Tecla> + <Tecla>R</Tecla> (ou abra o Prompt de Comando), cole e dê <Tecla>Enter</Tecla>:</>
+                : <>No terminal do computador, cole e dê <Tecla>Enter</Tecla>:</>}
+            </p>
             <div className="relative rounded-xl border border-line-strong bg-black/50 p-3 pr-12">
-              <code className="block max-h-28 overflow-auto break-all font-mono text-[11.5px] leading-relaxed text-fg">{comando}</code>
-              <button onClick={copiar} aria-label="Copiar comando" className="absolute right-2 top-2 grid size-8 place-items-center rounded-md text-subtle hover:bg-white/10 hover:text-fg">
+              <code className="block break-all font-mono text-[12.5px] leading-relaxed text-fg" data-comando>{comando}</code>
+              <button onClick={() => copiar()} aria-label="Copiar comando" className="absolute right-2 top-2 grid size-8 place-items-center rounded-md text-subtle hover:bg-white/10 hover:text-fg">
                 {copiado ? <Check className="size-4 text-ok" /> : <Copy className="size-4" />}
               </button>
             </div>
             <p className="text-[12px] text-subtle">
-              <span className="text-fg">3.</span> Em segundos o computador aparece nesta lista com o selo <span className="text-ok">Agente real</span>.
-              Opções: <code className="font-mono">--permitir-bloqueio</code> (trava a sessão de verdade), <code className="font-mono">--permitir-reinicio</code> (reinicia com 1 minuto de aviso), <code className="font-mono">--aplicar-politica</code> (quarentena de executáveis baixados) e <code className="font-mono">--testar-captura</code> (confere se a tela pode ser compartilhada). Depois de inscrito, rode <code className="font-mono">node agente.mjs --instalar-servico</code>: o agente passa a iniciar sozinho com o computador e aparece o atalho “Pedir ajuda ao Líder” na área de trabalho.
+              Em segundos o computador aparece nesta lista com o selo <span className="text-ok">Agente real</span>.
+              {" "}Ligado: {[opcoes.bloqueio && "bloqueio", opcoes.reinicio && "reinício", opcoes.iniciarComPc && "iniciar com o computador", opcoes.politica && "quarentena de downloads"].filter(Boolean).join(", ") || "só monitoramento"}.
+              {" "}Precisa do Node.js: {sistema === "windows" ? "se faltar, o comando instala sozinho (aceite o aviso do Windows)." : "instale antes (nodejs.org ou sudo apt install nodejs)."}
             </p>
+            <details className="text-[12px] text-subtle">
+              <summary className="cursor-pointer text-muted hover:text-fg">Sem PowerShell ou sem internet no computador? Jeito manual</summary>
+              <p className="mt-2">Baixe <span className="font-mono text-muted">{base}/api/agente/script</span> como <span className="font-mono text-muted">agente.mjs</span> e rode na mesma pasta:</p>
+              <code className="mt-1.5 block break-all rounded-lg border border-line bg-black/40 px-2.5 py-1.5 font-mono text-[11.5px] text-fg">
+                {comandos?.manual} {[opcoes.bloqueio && "--permitir-bloqueio", opcoes.reinicio && "--permitir-reinicio", opcoes.politica && "--aplicar-politica", opcoes.iniciarComPc && "--instalar-servico"].filter(Boolean).join(" ")}
+              </code>
+            </details>
             <div className="flex justify-end"><Button variant="ghost" onClick={() => setAberto(false)}>Fechar</Button></div>
           </motion.div>
         )}
       </DialogContent>
     </Dialog>
   );
+}
+
+function Tecla({ children }: { children: React.ReactNode }) {
+  return <kbd className="rounded border border-line-strong bg-white/5 px-1.5 py-0.5 font-mono text-[11.5px] text-fg">{children}</kbd>;
 }

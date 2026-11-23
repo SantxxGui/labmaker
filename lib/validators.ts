@@ -164,10 +164,13 @@ const so = z.enum(["WINDOWS", "MACOS", "LINUX", "ANDROID", "IOS", "CHROMEOS"]);
 export const inscricaoSchema = z.object({
   politicaId: z.string().nullable().optional(),
   laboratorioId: z.string().nullable().optional(),
+  /** endereço que o outro computador usa para chegar no servidor (vai dentro do script de instalação) */
+  servidor: z.string().trim().max(200).optional(),
+  opcoes: z.object({ bloqueio: z.boolean(), reinicio: z.boolean(), iniciarComPc: z.boolean(), politica: z.boolean() }).partial().optional(),
 });
 
 export const agenteInscreverSchema = z.object({
-  codigo: z.string().min(20, "Código de inscrição inválido."),
+  codigo: z.string().trim().min(6, "Código de inscrição inválido."),
   hostname: z.string().trim().min(1).max(63).regex(/^[A-Za-z0-9._-]+$/, "Hostname inválido."),
   tipo: z.enum(["NOTEBOOK", "DESKTOP", "TABLET", "SMARTPHONE"]).default("NOTEBOOK"),
   so,

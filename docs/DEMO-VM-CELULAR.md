@@ -92,11 +92,13 @@ node agente.mjs --testar-captura           # deve dizer "✔ Captura funcionando
 ```
 
 6. No navegador do **seu notebook** (como Líder): **Notebooks → Adicionar aparelho → Computador / VM** → toque no atalho **VM do VirtualBox (10.0.2.2)** → **Gerar código** → copie o comando.
-7. No terminal da VM, cole o comando e acrescente o nome e o bloqueio real:
+7. No terminal da VM, cole o comando de uma linha que aparece na tela (aba **Linux / macOS**):
 
 ```bash
-node agente.mjs --servidor http://10.0.2.2:3000 --inscricao <CÓDIGO> --nome VM-MINT-01 --permitir-bloqueio
+curl -fsSL http://10.0.2.2:3000/i/K7P2QX | sh
 ```
+
+Numa VM com Windows: **Win+R** e o comando da aba **Windows** (`powershell -c "irm …/i/K7P2QX|iex"`).
 
 Em segundos `VM-MINT-01` aparece em Notebooks com o selo **real**, CPU e memória de verdade.
 
