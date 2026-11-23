@@ -167,6 +167,8 @@ export const inscricaoSchema = z.object({
   /** endereço que o outro computador usa para chegar no servidor (vai dentro do script de instalação) */
   servidor: z.string().trim().max(200).optional(),
   opcoes: z.object({ bloqueio: z.boolean(), reinicio: z.boolean(), iniciarComPc: z.boolean(), politica: z.boolean() }).partial().optional(),
+  /** por quantas horas o código vale: 2, 12 (padrão) ou 24 */
+  validadeHoras: z.union([z.literal(2), z.literal(12), z.literal(24)]).optional(),
 });
 
 export const agenteInscreverSchema = z.object({

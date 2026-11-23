@@ -144,6 +144,6 @@ Autenticação: cookie `labops_session` (JWT httpOnly) obtido em `POST /api/auth
 B=http://localhost:3000
 curl -c c.txt -X POST $B/api/auth/login -H 'Content-Type: application/json' -d '{"email":"lider@labmaker.dev","senha":"labmaker123"}'
 curl -b c.txt $B/api/equipamentos
-npm run test:api           # 121 verificações ponta a ponta
+npm run test:api           # 125 verificações ponta a ponta
 npm run test:concorrencia  # 50 pedidos simultâneos → 1 reserva
 ```

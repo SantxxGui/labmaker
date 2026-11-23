@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ALFABETO_CONVITE, OPCOES_PADRAO, argumentosAgente, comandosInstalacao, gerarCodigoCurto, normalizarCodigo,
+  ALFABETO_CONVITE, OPCOES_PADRAO, argumentosAgente, conviteVencido, comandosInstalacao, gerarCodigoCurto, normalizarCodigo,
   scriptErro, scriptPara, scriptUnix, scriptWindows, servidorSeguro,
 } from "@/lib/convite";
 
@@ -51,5 +51,18 @@ describe("comando de instalação", () => {
     const u = scriptUnix("https://s.dev", "K7P2QX", { ...OPCOES_PADRAO, iniciarComPc: false });
     expect(u).toContain("--inscricao \"$CODIGO\" --permitir-bloqueio --permitir-reinicio\n");
     expect(scriptErro("powershell", "Código inválido")).toContain("Codigo invalido");
+  });
+});
+
+describe("validade do código", () => {
+  const criado = new Date("2026-11-23T11:00:00Z"); // 08:00 em São Paulo
+  it("vale até o horário escolhido (12 h → até 20:00) e vence no minuto exato", () => {
+    const c = { expiraEm: "2026-11-23T23:00:00Z" };
+    expect(conviteVencido(c, criado, new Date("2026-11-23T22:59:59Z"))).toBe(false);
+    expect(conviteVencido(c, criado, new Date("2026-11-23T23:00:00Z"))).toBe(true);
+  });
+  it("convite gerado antes desta mudança (sem expiraEm) continua valendo 2 h", () => {
+    expect(conviteVencido({}, criado, new Date("2026-11-23T12:59:00Z"))).toBe(false);
+    expect(conviteVencido({}, criado, new Date("2026-11-23T13:00:00Z"))).toBe(true);
   });
 });

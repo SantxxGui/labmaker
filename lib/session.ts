@@ -74,14 +74,14 @@ export function sessionCookieOptions(req: Request) {
 }
 
 /**
- * Código de inscrição de um computador (JWT de 2 h, assinado com a mesma chave).
+ * Código de inscrição de um computador (JWT de 2, 12 ou 24 h, assinado com a mesma chave).
  * É o que o Líder gera na tela e cola no comando do agente; vale para inscrever, não para logar.
  */
-export async function assinarInscricao(dados: { politicaId: string | null; laboratorioId: string | null; por: string }) {
+export async function assinarInscricao(dados: { politicaId: string | null; laboratorioId: string | null; por: string }, horas = 2) {
   return new SignJWT({ ...dados, fim: "inscricao-agente" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("2h")
+    .setExpirationTime(`${horas}h`)
     .sign(getSecret());
 }
 

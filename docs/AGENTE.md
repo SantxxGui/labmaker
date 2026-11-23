@@ -7,7 +7,7 @@ Dois agentes, o mesmo protocolo:
 
 ## Como instalar
 
-1. O Líder abre **Notebooks → Adicionar aparelho → Computador / VM**, escolhe a política e a área, marca o que o LabMaker pode fazer (bloquear, reiniciar, iniciar com o PC, quarentena) e clica em *Gerar código*. Sai um **código de 6 letras** (sem 0/O, 1/I/L), válido por 2 h e para quantos computadores precisar.
+1. O Líder abre **Notebooks → Adicionar aparelho → Computador / VM**, escolhe a política e a área, marca o que o LabMaker pode fazer (bloquear, reiniciar, iniciar com o PC, quarentena) e clica em *Gerar código*. Sai um **código de 6 letras** (sem 0/O, 1/I/L), válido por 2 h, 12 h (padrão) ou 1 dia, e para quantos computadores precisar.
 2. No computador, **um comando só**:
 
 ```bash

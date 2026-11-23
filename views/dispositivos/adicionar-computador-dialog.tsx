@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { OPCOES_PADRAO, type OpcoesInstalacao } from "@/lib/convite";
+import { OPCOES_PADRAO, VALIDADES_HORAS, VALIDADE_PADRAO_HORAS, type OpcoesInstalacao, type ValidadeHoras } from "@/lib/convite";
 import { Segmented } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SO_LABEL, TIPO_DISPOSITIVO_LABEL } from "@/lib/labels";
@@ -18,7 +18,7 @@ import type { DispositivoPainelDTO, LaboratorioDTO, PoliticaDTO, SistemaOperacio
 /**
  * Adicionar aparelho, de três jeitos:
  *  - manual: só o cadastro (pronto para empréstimo);
- *  - agente: código curto de 2 h + UM comando (Win+R no Windows, curl | sh no Linux/macOS) que
+ *  - agente: código curto (vale 2, 12 ou 24 h) + UM comando (Win+R no Windows, curl | sh no Linux/macOS) que
  *    baixa o agente, inscreve o computador com as opções marcadas e liga o início automático;
  *  - celular: o mesmo código num QR code que abre /agente no navegador do celular.
  * O agente troca o código por um token próprio (o servidor guarda só o hash).
@@ -40,6 +40,11 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
   const [opcoes, setOpcoes] = useState<OpcoesInstalacao>(OPCOES_PADRAO);
   const [sistema, setSistema] = useState<"windows" | "unix">("windows");
   const [comandos, setComandos] = useState<{ windows: string; unix: string; manual: string } | null>(null);
+  const [validade, setValidade] = useState<ValidadeHoras>(VALIDADE_PADRAO_HORAS);
+  const [validoAte, setValidoAte] = useState<Date | null>(null);
+  const ateTexto = validoAte
+    ? validoAte.toLocaleString("pt-BR", validoAte.toDateString() === new Date().toDateString() ? { hour: "2-digit", minute: "2-digit" } : { weekday: "short", hour: "2-digit", minute: "2-digit" })
+    : "";
 
   // Endereço que o OUTRO aparelho usa para chegar no servidor (localhost só funciona nesta máquina)
   const origem = typeof window !== "undefined" ? window.location.origin : "";
@@ -81,12 +86,13 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
       const r = await fetch("/api/dispositivos/inscricao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ politicaId, laboratorioId: laboratorioId === "nenhum" ? null : laboratorioId, servidor: base, opcoes }),
+        body: JSON.stringify({ politicaId, laboratorioId: laboratorioId === "nenhum" ? null : laboratorioId, servidor: base, opcoes, validadeHoras: validade }),
       });
       const j = await r.json();
       if (!r.ok) return toast.error(j.error ?? "Não foi possível gerar o código.");
       setCodigo(j.codigo);
       setComandos(j.comandos);
+      setValidoAte(j.validoAte ? new Date(j.validoAte) : null);
     } finally {
       setGerando(false);
     }
@@ -132,7 +138,7 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
               ? "Cadastre o notebook ou tablet pelo patrimônio: ele já entra na lista de empréstimos. Depois, se quiser monitorar, instale o agente com o mesmo nome."
               : modo === "agente"
                 ? "Para computadores (inclusive uma VM): um comando só instala o agente, um programa leve em Node.js que faz check-in a cada 15 s, mostra avisos, trava a tela e mostra a tela quando o usuário autoriza."
-                : "Para celulares e tablets: a pessoa escaneia o QR code e o navegador vira o agente. Recebe avisos (com confirmação de leitura) e bloqueio. O código vale 2 h."}
+                : "Para celulares e tablets: a pessoa escaneia o QR code e o navegador vira o agente. Recebe avisos (com confirmação de leitura) e bloqueio."}
           </DialogDescription>
         </DialogHeader>
 
@@ -242,7 +248,12 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
                 ))}
               </div>
             )}
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-[12.5px] text-muted">
+                <span>O código vale</span>
+                <Segmented value={String(validade)} onChange={(v) => setValidade(Number(v) as ValidadeHoras)}
+                  options={VALIDADES_HORAS.map((h) => ({ value: String(h), label: h === 24 ? "1 dia" : `${h} h` }))} />
+              </div>
               <Button onClick={gerar} loading={gerando} disabled={!/^https?:\/\/./.test(base)}>{modo === "celular" ? "Gerar QR code" : "Gerar código de inscrição"}</Button>
             </div>
           </div>
@@ -276,7 +287,7 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
                 <p className="text-[11px] uppercase tracking-wider text-subtle">Código</p>
                 <p className="font-mono text-2xl font-semibold tracking-[0.25em] text-fg" data-codigo>{codigo}</p>
               </div>
-              <p className="max-w-[15rem] text-right text-[12px] text-subtle">Vale 2 h e serve para quantos computadores você quiser.</p>
+              <p className="max-w-[15rem] text-right text-[12px] text-subtle">Vale até <span className="text-muted">{ateTexto}</span> e serve para quantos computadores você quiser.</p>
             </div>
             <Segmented value={sistema} onChange={setSistema} options={[{ value: "windows", label: "Windows" }, { value: "unix", label: "Linux / macOS" }]} />
             <p className="text-[13px] text-muted">

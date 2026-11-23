@@ -2,7 +2,7 @@
  * CONTROLLER — Agente real dos notebooks.
  *
  * Fluxo:
- *  1. O Líder gera um código de inscrição (POST /api/dispositivos/inscricao) — vale 2 h.
+ *  1. O Líder gera um código de inscrição (POST /api/dispositivos/inscricao) — vale 2, 12 ou 24 h.
  *  2. No computador, o agente envia o código + dados do aparelho (POST /api/agente/inscrever)
  *     e recebe um TOKEN próprio. O banco guarda só o SHA-256 do token.
  *  3. A cada 15 s o agente faz check-in (POST /api/agente/checkin, cabeçalho Authorization: Bearer <token>):
@@ -25,7 +25,7 @@ import { agenteChamadoSchema, agenteCheckinSchema, agenteInscreverSchema, agente
 import { AgenteModel } from "@/models/agente.model";
 import { ConviteModel, type Convite } from "@/models/convite.model";
 import { TentativaLoginModel } from "@/models/tentativa-login.model";
-import { OPCOES_PADRAO, VALIDADE_CONVITE_MIN, comandosInstalacao, gerarCodigoCurto, normalizarCodigo, scriptErro, scriptPara, scriptUnix, scriptWindows, servidorSeguro } from "@/lib/convite";
+import { OPCOES_PADRAO, VALIDADE_PADRAO_HORAS, comandosInstalacao, gerarCodigoCurto, normalizarCodigo, scriptErro, scriptPara, scriptUnix, scriptWindows, servidorSeguro } from "@/lib/convite";
 import { avaliarTentativas } from "@/lib/limite-login";
 import { AuditoriaModel } from "@/models/auditoria.model";
 import { DispositivoModel } from "@/models/dispositivo.model";
@@ -73,19 +73,21 @@ export const AgenteController = {
     const servidor = servidorSeguro(corpo.servidor || origemDe(req));
     if (!servidor) throw new ApiError(422, "Endereço do servidor inválido. Use algo como https://seu-site.onrender.com ou http://192.168.0.10:3000.");
     const opcoes = { ...OPCOES_PADRAO, ...corpo.opcoes };
-    const jwt = await assinarInscricao({ politicaId, laboratorioId, por: s.sub });
+    const horas = corpo.validadeHoras ?? VALIDADE_PADRAO_HORAS;
+    const expiraEm = new Date(Date.now() + horas * 3_600_000).toISOString();
+    const jwt = await assinarInscricao({ politicaId, laboratorioId, por: s.sub }, horas);
     // código curto de 6 letras guardado no servidor; sorteia de novo no caso (raríssimo) de repetir
     let codigo = "";
     for (let i = 0; i < 5 && !codigo; i++) {
       const c = gerarCodigoCurto(randomInt);
-      if (await ConviteModel.criar(c, { jwt, servidor, opcoes })) codigo = c;
+      if (await ConviteModel.criar(c, { jwt, servidor, opcoes, expiraEm })) codigo = c;
     }
     if (!codigo) throw new ApiError(503, "Não foi possível gerar o código. Tente de novo.");
     await AuditoriaModel.registrar({
       autor: s, acao: "dispositivo.inscricao_gerada", entidade: "dispositivo", entidadeId: null, ip: ipDe(req),
-      resumo: `Gerou o código de inscrição ${codigo} (válido por 2 h)`,
+      resumo: `Gerou o código de inscrição ${codigo} (válido por ${horas} h)`,
     });
-    return json({ codigo, servidor, opcoes, comandos: comandosInstalacao(servidor, codigo), validoAte: new Date(Date.now() + VALIDADE_CONVITE_MIN * 60_000).toISOString() }, 201);
+    return json({ codigo, servidor, opcoes, comandos: comandosInstalacao(servidor, codigo), validadeHoras: horas, validoAte: expiraEm }, 201);
   }),
 
   /**
@@ -106,14 +108,15 @@ export const AgenteController = {
       return tipo ? texto(scriptErro(tipo, motivo)) : texto(motivo, 429);
     }
     if (!convite || !codigo) {
-      const motivo = "Código de instalação inválido ou vencido (vale 2 h). Gere outro em Notebooks > Adicionar aparelho > Computador.";
+      const motivo = "Código de instalação inválido ou vencido. Gere outro em Notebooks > Adicionar aparelho > Computador.";
       // 200 com um script que mostra o erro: com 404 o PowerShell só diria "(404) Não Localizado"
       return tipo ? texto(scriptErro(tipo, motivo)) : texto(motivo, 404);
     }
     if (tipo === "powershell") return texto(scriptWindows(convite.servidor, codigo, convite.opcoes));
     if (tipo === "sh") return texto(scriptUnix(convite.servidor, codigo, convite.opcoes));
     const c = comandosInstalacao(convite.servidor, codigo);
-    return texto(`Instalar o agente LabMaker (código ${codigo}, vale 2 h)\n\nWindows: aperte Win+R, cole e dê Enter:\n  ${c.windows}\n\nLinux / macOS, no terminal:\n  ${c.unix}\n`);
+    const ate = convite.expiraEm ? new Date(convite.expiraEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }) : null;
+    return texto(`Instalar o agente LabMaker (código ${codigo}${ate ? `, vale até ${ate}` : ""})\n\nWindows: aperte Win+R, cole e dê Enter:\n  ${c.windows}\n\nLinux / macOS, no terminal:\n  ${c.unix}\n`);
   },
 
   /** POST /api/agente/inscrever — o agente troca o código por um token próprio */

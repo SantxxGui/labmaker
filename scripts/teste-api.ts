@@ -63,6 +63,17 @@ async function main() {
   confere("Líder gera código de inscrição", cod.status === 201 || cod.status === 200);
   confere("código de inscrição é curto (6 letras) e vem com o comando de uma linha",
     /^[A-HJ-KM-NP-Z2-9]{6}$/.test(cod.json?.codigo ?? "") && /^powershell -c "irm .+\/i\/[A-Z0-9]{6}\|iex"$/.test(cod.json?.comandos?.windows ?? ""));
+  confere("sem escolher, o código vale 12 h", Math.abs(new Date(cod.json!.validoAte).getTime() - Date.now() - 12 * 3_600_000) < 60_000);
+  const umDia = await lider.post("/api/dispositivos/inscricao", { politicaId: pols[0]?.id, validadeHoras: 24 });
+  confere("Líder escolhe 1 dia de validade", umDia.status === 201 && Math.abs(new Date(umDia.json!.validoAte).getTime() - Date.now() - 24 * 3_600_000) < 60_000);
+  confere("validade fora das opções (2, 12, 24 h) → 422", (await lider.post("/api/dispositivos/inscricao", { validadeHoras: 72 })).status === 422);
+  // vencido: o mesmo convite com expiraEm no passado deixa de valer
+  const chaveDia = `convite:${umDia.json!.codigo}`;
+  await import("dotenv/config");
+  const { prisma: bd } = await import("../lib/prisma");
+  const linha = await bd.configSistema.findUnique({ where: { chave: chaveDia } });
+  await bd.configSistema.update({ where: { chave: chaveDia }, data: { valor: JSON.stringify({ ...JSON.parse(linha!.valor), expiraEm: new Date(Date.now() - 1000).toISOString() }) } });
+  confere("código vencido não instala mais", (await (await fetch(`${BASE}/i/${umDia.json!.codigo}`, { headers: { "User-Agent": "curl/8.5.0", "X-Forwarded-For": "203.0.113.10" } })).text()).includes("vencido"));
   // ── Instalação em um comando: /i/CÓDIGO devolve o script certo para quem pede
   const instalador = async (codigo: string, ua: string, ip = "203.0.113.7") => {
     const r = await fetch(`${BASE}/i/${codigo}`, { headers: { "User-Agent": ua, "X-Forwarded-For": ip } });

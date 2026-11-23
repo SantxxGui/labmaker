@@ -9,12 +9,23 @@
  *   Windows (Win+R, cmd ou PowerShell): powershell -c "irm https://SERVIDOR/i/K7P2QX|iex"
  *   Linux / macOS:                      curl -fsSL https://SERVIDOR/i/K7P2QX | sh
  *
- * O mesmo código serve para vários computadores enquanto vale (2 h).
+ * O mesmo código serve para vários computadores enquanto vale (o Líder escolhe: 2 h, 12 h ou 24 h).
  */
 
 export const ALFABETO_CONVITE = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 export const TAMANHO_CONVITE = 6;
-export const VALIDADE_CONVITE_MIN = 120;
+/** Validades que o Líder pode escolher (horas). 12 h cobre um dia de trabalho instalando a sala. */
+export const VALIDADES_HORAS = [2, 12, 24] as const;
+export type ValidadeHoras = (typeof VALIDADES_HORAS)[number];
+export const VALIDADE_PADRAO_HORAS: ValidadeHoras = 12;
+/** Nenhum convite passa disso: é o limite da limpeza dos vencidos. */
+export const VALIDADE_MAXIMA_MIN = 24 * 60;
+
+/** Até quando o código vale; convites antigos (sem expiraEm) valiam 2 h a partir da criação. */
+export function conviteVencido(c: { expiraEm?: string }, criadoEm: Date, agora = new Date()): boolean {
+  const fim = c.expiraEm ? new Date(c.expiraEm).getTime() : criadoEm.getTime() + 2 * 3_600_000;
+  return !(agora.getTime() < fim);
+}
 
 export type OpcoesInstalacao = {
   /** "Bloquear tela" trava o computador de verdade (e trava de novo até o Líder liberar) */
