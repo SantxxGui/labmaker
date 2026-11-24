@@ -7,7 +7,7 @@ Dois agentes, o mesmo protocolo:
 
 ## Como instalar
 
-1. O Líder abre **Notebooks → Adicionar aparelho → Computador / VM**, escolhe a política e a área, marca o que o LabMaker pode fazer (bloquear, reiniciar, iniciar com o PC, quarentena) e clica em *Gerar código*. Sai um **código de 6 letras** (sem 0/O, 1/I/L), válido por 2 h, 12 h (padrão) ou 1 dia, e para quantos computadores precisar.
+1. O Líder abre **Notebooks → Adicionar aparelho → Computador / VM**, escolhe a política e a área, marca o que o LabMaker pode fazer (bloquear, reiniciar, iniciar com o PC, aplicar a política) e clica em *Gerar código*. Sai um **código de 6 letras** (sem 0/O, 1/I/L), válido por 2 h, 12 h (padrão) ou 1 dia, e para quantos computadores precisar.
 2. No computador, **um comando só**:
 
 ```bash
@@ -28,7 +28,7 @@ Jeito manual (sem PowerShell): `node agente.mjs --servidor http://IP-DO-SERVIDOR
 | `--nome LM-NB-01` | Usa este nome — **assume o aparelho que o Líder já cadastrou à mão** (mesmo registro, mesmo histórico de empréstimos) |
 | `--permitir-reinicio` | "Reiniciar" reinicia o computador de verdade com 1 minuto de aviso (`shutdown /r /t 60` no Windows); sem isso, o agente recusa |
 | `--permitir-bloqueio` | "Bloquear tela" trava a sessão de verdade **até o Líder liberar**: se o aluno destravar com a senha dele, o agente trava de novo em até 5 s (sem a opção, só registra) |
-| `--aplicar-politica` | Executáveis baixados em `~/Downloads` vão para a quarentena (sem isso, só reporta) |
+| `--aplicar-politica` | **Aplica a política**: fecha os **aplicativos proibidos** assim que abrem (a cada 5 s, com `taskkill`/sinal — sem precisar de administrador) e põe executáveis baixados em `~/Downloads` na quarentena. Sem isso, só reporta. Avisa o Líder (evento `APP_BLOQUEADO`/`DOWNLOAD_BLOQUEADO`) e o aluno |
 
 > As opções ficam **salvas** no computador: já inscrito, basta rodar `node agente.mjs --permitir-bloqueio --permitir-reinicio` uma vez — sem código novo — e das próximas vezes só `node agente.mjs`.
 | `--tipo DESKTOP` | Estação fixa (não entra na lista de empréstimos) |
@@ -91,6 +91,19 @@ O atalho **"Pedir ajuda ao Líder"** na área de trabalho abre o pedido **na hor
 | Mensagem do Líder (chat) | Notificação + janela com campo de resposta (`zenity --entry`, `InputBox`, `display dialog`). A resposta vai para `POST /api/agente/chamados/mensagem` |
 | Instalar / remover app | Simulado (em produção: winget / Intune) |
 | Reiniciar / Apagar dados | **Sempre recusado** no agente de demonstração |
+
+## O que a política faz de verdade
+
+| Item da política | No computador com o agente instalado |
+|---|---|
+| Bloquear a tela, reiniciar, travar fora do horário | **Real** (com `--permitir-bloqueio` / `--permitir-reinicio`) |
+| **Aplicativos proibidos** | **Real** com `--aplicar-politica`: o agente fecha o programa em até 5 s e avisa. Nomes conhecidos (Steam, uTorrent, Roblox, Minecraft, Discord, Epic Games, Fortnite, Valorant, League of Legends, WhatsApp, Telegram, Spotify…) viram os processos certos; os outros, pela primeira palavra do nome. Processos do sistema e o próprio agente nunca são fechados |
+| Downloads de executáveis | **Real**, limitado à pasta Downloads (quarentena) |
+| Instalar / remover app | **Simulado** (registra; em produção: `winget`/Intune com o agente como serviço de administrador) |
+| Sites bloqueados, USB | **Registrado e conferido**, não imposto: exige administrador (ou o firewall da instituição, que é o lugar certo para sites) |
+| Apagar dados | **Desligado** de propósito |
+
+O agente roda como o **usuário** (sem administrador). Por isso fecha o que o aluno abre, mas não muda configurações do Windows. Impor USB, sites e instalações é a fase do agente como **serviço do sistema**.
 
 ## Suporte remoto (tela)
 

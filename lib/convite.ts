@@ -34,11 +34,11 @@ export type OpcoesInstalacao = {
   reinicio: boolean;
   /** o agente inicia sozinho quando o computador liga (+ atalho "Pedir ajuda ao Líder") */
   iniciarComPc: boolean;
-  /** executáveis baixados vão para a quarentena */
+  /** aplica a política: fecha os apps proibidos e põe executáveis baixados na quarentena */
   politica: boolean;
 };
 
-export const OPCOES_PADRAO: OpcoesInstalacao = { bloqueio: true, reinicio: true, iniciarComPc: true, politica: false };
+export const OPCOES_PADRAO: OpcoesInstalacao = { bloqueio: true, reinicio: true, iniciarComPc: true, politica: true };
 
 /** Código curto aleatório. `aleatorio(n)` devolve um inteiro em [0, n) — crypto.randomInt no servidor. */
 export function gerarCodigoCurto(aleatorio: (n: number) => number): string {

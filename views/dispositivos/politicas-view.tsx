@@ -173,7 +173,8 @@ function CartaoPolitica({ politica, podeEditar, onSalva }: { politica: PoliticaD
         </div>
 
         <div>
-          <p className="mb-2 text-[13px] font-medium">Aplicativos proibidos</p>
+          <p className="mb-0.5 text-[13px] font-medium">Aplicativos proibidos</p>
+          <p className="mb-2 text-[12px] text-subtle">O agente fecha estes programas assim que abrem e avisa você (computadores instalados com “Aplicar a política”). Também não aparecem para instalar pelo painel.</p>
           <div className="flex flex-wrap gap-1.5">
             <AnimatePresence initial={false}>
               {f.appsBloqueados.map((a) => (

@@ -236,7 +236,7 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
                   ["bloqueio", "Bloquear a tela de verdade", "Trava o computador e trava de novo até você liberar"],
                   ["reinicio", "Reiniciar pelo painel", "Com 1 minuto de aviso na tela"],
                   ["iniciarComPc", "Iniciar junto com o computador", "E cria o atalho “Pedir ajuda ao Líder” na área de trabalho"],
-                  ["politica", "Quarentena de downloads", "Programas baixados vão para a quarentena"],
+                  ["politica", "Aplicar a política", "Fecha os apps proibidos e põe programas baixados em quarentena"],
                 ] as const).map(([k, titulo, desc]) => (
                   <label key={k} className="flex cursor-pointer items-center justify-between gap-3 py-1.5">
                     <span>
@@ -303,7 +303,7 @@ export function AdicionarComputadorDialog({ laboratorios, politicas, onCadastrad
             </div>
             <p className="text-[12px] text-subtle">
               Em segundos o computador aparece nesta lista com o selo <span className="text-ok">Agente real</span>.
-              {" "}Ligado: {[opcoes.bloqueio && "bloqueio", opcoes.reinicio && "reinício", opcoes.iniciarComPc && "iniciar com o computador", opcoes.politica && "quarentena de downloads"].filter(Boolean).join(", ") || "só monitoramento"}.
+              {" "}Ligado: {[opcoes.bloqueio && "bloqueio", opcoes.reinicio && "reinício", opcoes.iniciarComPc && "iniciar com o computador", opcoes.politica && "aplicar a política"].filter(Boolean).join(", ") || "só monitoramento"}.
               {" "}Precisa do Node.js: {sistema === "windows" ? "se faltar, o comando instala sozinho (aceite o aviso do Windows)." : "instale antes (nodejs.org ou sudo apt install nodejs)."}
             </p>
             <details className="text-[12px] text-subtle">
