@@ -88,6 +88,10 @@ export const ChamadoModel = {
     return toMsg(await prisma.mensagemSuporte.create({ data: { chamadoId, autor, autorNome, texto }, select: selectMsg }));
   },
 
+  atualizar(id: string, dados: { descricao?: string; autorizaTela?: boolean }) {
+    return prisma.chamado.update({ where: { id }, data: dados, select: { id: true } });
+  },
+
   /** Mensagens do Líder ainda não entregues ao aparelho — já marca como entregues. */
   async entregar(chamadoId: string) {
     const pendentes = await prisma.mensagemSuporte.findMany({ where: { chamadoId, autor: { not: "USUARIO" }, entregueEm: null }, orderBy: { criadoEm: "asc" }, select: selectMsg });

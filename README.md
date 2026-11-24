@@ -12,8 +12,8 @@ A aplicação **nasce zerada**: nenhuma máquina, área, notebook ou reserva —
 | **Segurança** | JWT em cookie httpOnly · bcrypt · revogação imediata de sessão · limite de tentativas de login · CSP e cabeçalhos · RBAC com 3 perfis · auditoria imutável no banco |
 | **Máquinas** | Telemetria, alarmes, câmera e comandos seguros via gateway (simulado; mesmo formato do real) |
 | **Notebooks e celulares** | **Agente real** (`agente/agente.mjs`, Node sem dependências): métricas, avisos nativos, bloqueio e **suporte remoto com a tela ao vivo** (com autorização e aviso fixo na tela) · inicia com o computador · **agente pelo navegador** para celulares (QR code, instalável como app, notificação push) · empréstimo com prazo |
-| **Atendimento** | Aluno toca em **Pedir ajuda** (notebook ou celular) → fila do Líder com **chat** e tela pré-autorizada · lembrete de devolução 15 min antes, aviso de atraso e **alarme que apita 1 min depois do prazo** até a devolução · espaço **trava sozinho às 20h** e destrava às 8h |
-| **Qualidade** | 104 testes unitários · 125 verificações ponta a ponta · teste de concorrência (50 pedidos simultâneos → 1 reserva) · CI no GitHub Actions · Docker |
+| **Atendimento** | Aluno toca em **Pedir ajuda** (notebook ou celular) → o pedido cai **na hora** na fila do Líder e abre uma **janelinha de chat** (no computador: Edge/Chrome em modo app, sem janela preta) com tela pré-autorizada · lembrete de devolução 15 min antes, aviso de atraso e **alarme que apita 1 min depois do prazo** até a devolução · espaço **trava sozinho às 20h** e destrava às 8h |
+| **Qualidade** | 105 testes unitários · 133 verificações ponta a ponta · teste de concorrência (50 pedidos simultâneos → 1 reserva) · CI no GitHub Actions · Docker |
 
 ## Como rodar
 
@@ -58,7 +58,7 @@ Ele baixa o agente, inscreve o computador com as opções marcadas e liga o iní
 
 Em segundos o computador aparece com o selo **real**: CPU, memória, disco e app em uso medidos de verdade; avisos chegam como notificação nativa (Windows, macOS, Linux). Com **Suporte remoto**, o usuário autoriza numa janela e o Líder vê a **tela ao vivo** (só visualização, até 10 min); enquanto isso, uma janela fixa avisa "sua tela está sendo vista" com o botão **Parar de compartilhar**.
 
-Depois, `node agente.mjs --instalar-servico` faz o agente **iniciar sozinho** com o computador e cria o atalho **"Pedir ajuda ao Líder"** na área de trabalho: o aluno descreve o problema, diz se autoriza ver a tela, e o pedido cai na tela **Atendimento** do Líder, com chat.
+Depois, `node agente.mjs --instalar-servico` faz o agente **iniciar sozinho** com o computador e cria o atalho **"Pedir ajuda ao Líder"** na área de trabalho: um clique abre o pedido **na hora** na tela **Atendimento** do Líder e uma **janelinha de chat** (o aluno conta o problema ali e pode autorizar o Líder a ver a tela).
 
 Para **celulares**: **Adicionar aparelho → Celular (QR code)** — a pessoa escaneia e o navegador vira o agente (avisos com confirmação de leitura, bloqueio, **Pedir ajuda** com chat). Com HTTPS, dá para **instalar como app** e receber **notificações push** com o app fechado.
 
@@ -77,8 +77,8 @@ Passo a passo da demonstração com **VM e celular**: [`docs/DEMO-VM-CELULAR.md`
 | `npm run db:reset` | Apaga, recria (migrations) e cria o espaço **zerado** |
 | `npm run db:demo` | Igual, mas com o espaço de **exemplo** |
 | `npm run db:setup` | Prepara o banco **só se estiver vazio** (deploy/Docker) |
-| `npm test` | 104 testes unitários das regras de negócio |
-| `npm run test:api` | 125 verificações ponta a ponta contra o servidor rodando |
+| `npm test` | 105 testes unitários das regras de negócio |
+| `npm run test:api` | 133 verificações ponta a ponta contra o servidor rodando |
 | `npm run test:concorrencia` | 5 alunos × 10 pedidos simultâneos no mesmo horário → exatamente 1 reserva |
 | `npm run typecheck` | Checagem de tipos |
 | `npm run agente -- --servidor … --inscricao …` | Roda o agente neste computador |

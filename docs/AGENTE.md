@@ -71,6 +71,16 @@ Agente ─ POST /api/agente/checkin (Bearer lmk_…) a cada 15 s
 - Ação enviada a um computador desligado fica **PENDENTE** e é entregue no próximo check-in (**ENTREGUE**); o efeito (ex.: marcar como bloqueado) só é aplicado quando o agente **confirma** (**EXECUTADA**). Se o agente recusa, o motivo aparece na tela do Líder.
 - Agente real é considerado **offline após 90 s** sem check-in (o simulador usa 36 h, para os dados de exemplo).
 
+## Pedir ajuda: janelinha de chat
+
+O atalho **"Pedir ajuda ao Líder"** na área de trabalho abre o pedido **na hora** (já aparece na fila do Líder) e uma **janelinha de chat**: o Edge ou o Chrome em modo app (`--app`, sem abas nem barra de endereço), na página `/ajuda`. Sem janela preta: no Windows o atalho é um `.lnk` que chama `wscript` + `pedir-ajuda.vbs`, que roda o agente escondido.
+
+- A pessoa conta o problema no chat; a **primeira mensagem vira a descrição** na fila do Líder.
+- A janela tem a chave *"O Líder pode ver minha tela durante o atendimento"* (vale como autorização prévia para ver a tela).
+- A janela usa uma **chave própria de 12 h** (no endereço, depois do `#`, que não vai para os logs do servidor) que só serve para o chat daquele aparelho — nunca o token do agente. Ela lê a conversa a cada 2 s e avisa o servidor que está aberta.
+- Se o Líder escrever com a janela fechada, o agente **reabre a janela** sozinho. Sem Edge/Chrome, abre no navegador padrão; sem navegador nenhum, volta à caixa de texto de antes.
+- Pelo atalho, se o servidor demorar (Render grátis "acordando"), o agente espera até 60 s e, se falhar, mostra um aviso com "Tentar de novo".
+
 ## Ações
 
 | Ação | No agente |
