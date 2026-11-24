@@ -9,7 +9,7 @@
  * Opções:
  *   --permitir-bloqueio   "Bloquear tela" trava a sessão e volta a travar até o Líder liberar (sem isso, só registra)
  *   --permitir-reinicio   "Reiniciar" reinicia o computador de verdade, com 1 minuto de aviso (sem isso, recusa)
- *   --aplicar-politica    executáveis baixados em ~/Downloads vão para a quarentena (sem isso, só são reportados)
+ *   --aplicar-politica    aplica a política: fecha os apps proibidos e põe executáveis baixados em ~/Downloads na quarentena (sem isso, só reporta)
  *   --nome LM-NB-01       usa este nome (assume o aparelho que o Líder já cadastrou manualmente)
  *   --tipo NOTEBOOK|DESKTOP
  *   --uma-vez             faz um único check-in e sai (testes)
@@ -28,7 +28,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const VERSAO = "4.9.0";
+const VERSAO = "4.10.0";
 const ARQ_CONFIG = path.join(os.homedir(), ".labmaker-agente.json");
 const PASTA_DOWNLOADS = path.join(os.homedir(), "Downloads");
 const QUARENTENA = path.join(os.homedir(), ".labmaker-quarentena");
@@ -1093,6 +1093,125 @@ function vigiarDownloads() {
   });
 }
 
+// ───────────────────────── política: apps proibidos ─────────────────────────
+// A cada 5 s o agente olha os programas abertos; se um está na lista "Aplicativos proibidos" da
+// política, fecha (com --aplicar-politica) e avisa o Líder. Não precisa de administrador: o aluno
+// só consegue abrir programas como ele mesmo, e esses o agente pode fechar.
+
+const normalizarNome = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\.(exe|app)$/, "").replace(/[^a-z0-9]/g, "");
+
+/** Nome do app na política → nomes de processo (normalizados). Fora desta lista, compara pelo nome. */
+const PROCESSOS_DE_APP = {
+  steam: ["steam", "steamwebhelper", "steamservice"],
+  utorrent: ["utorrent", "utorrentie"],
+  bittorrent: ["bittorrent", "bittorrentie"],
+  qbittorrent: ["qbittorrent"],
+  roblox: ["robloxplayerbeta", "robloxplayerlauncher", "robloxplayer", "robloxstudiobeta", "robloxstudiolauncherbeta"],
+  minecraft: ["minecraftlauncher", "minecraft", "minecraftwindows"],
+  discord: ["discord", "discordptb", "discordcanary"],
+  epicgames: ["epicgameslauncher", "epicwebhelper"],
+  fortnite: ["fortniteclientwin64shipping", "fortnitelauncher"],
+  valorant: ["valorant", "valorantwin64shipping", "riotclientservices", "riotclientux"],
+  leagueoflegends: ["leagueclient", "leagueclientux", "leagueoflegends"],
+  freefire: ["freefire", "hdplayer"],
+  whatsapp: ["whatsapp"],
+  telegram: ["telegram"],
+  spotify: ["spotify"],
+  tiktok: ["tiktok"],
+  battlenet: ["battlenet", "battlenetlauncher"],
+  origin: ["origin", "eadesktop"],
+};
+
+/** Nunca fecha estes, mesmo que alguém proíba um nome parecido (sistema, terminal, o próprio agente). */
+const PROTEGIDOS = new Set([
+  "node", "system", "registry", "smss", "csrss", "wininit", "winlogon", "services", "lsass", "svchost", "dwm", "explorer", "sihost",
+  "conhost", "powershell", "pwsh", "cmd", "wscript", "taskmgr", "runtimebroker", "searchhost", "startmenuexperiencehost",
+  "textinputhost", "ctfmon", "fontdrvhost", "systemd", "xorg", "xwayland", "gnomeshell", "plasmashell", "cinnamon", "bash", "sh",
+  "zsh", "loginwindow", "finder", "dock", "windowserver", "launchd",
+]);
+
+/** Este processo é de um app proibido? Devolve o nome do app na política, ou null. */
+function appProibido(processo, appsProibidos) {
+  const p = normalizarNome(processo);
+  if (!p || PROTEGIDOS.has(p)) return null;
+  for (const app of appsProibidos) {
+    const chave = normalizarNome(app);
+    const conhecidos = PROCESSOS_DE_APP[chave];
+    if (conhecidos ? conhecidos.includes(p) : null) return app;
+    // fora da lista: a primeira palavra do nome (≥ 4 letras) é o começo do processo ("Blender 4.2" → blender.exe)
+    if (!conhecidos) {
+      const palavra = normalizarNome(String(app).trim().split(/\s+/)[0] ?? "");
+      if (palavra.length >= 4 && p.startsWith(palavra)) return app;
+    }
+  }
+  return null;
+}
+
+/** Saída do `tasklist /fo csv /nh` → [{ pid, nome }]. */
+function lerTasklist(csv) {
+  const r = [];
+  for (const linha of String(csv).split(/\r?\n/)) {
+    const m = linha.match(/^"([^"]+)","(\d+)"/);
+    if (m) r.push({ nome: m[1], pid: Number(m[2]) });
+  }
+  return r;
+}
+
+async function processosAbertos() {
+  if (PLATAFORMA === "win32") {
+    const r = await rodarBruto("tasklist", ["/fo", "csv", "/nh"], 8000);
+    return r.ok ? lerTasklist(r.saida) : [];
+  }
+  if (PLATAFORMA === "linux") {
+    const lista = [];
+    for (const d of fs.readdirSync("/proc")) {
+      if (!/^\d+$/.test(d)) continue;
+      try {
+        const arg0 = fs.readFileSync(`/proc/${d}/cmdline`, "utf8").split("\0")[0];
+        const nome = arg0 ? path.basename(arg0) : fs.readFileSync(`/proc/${d}/comm`, "utf8").trim();
+        lista.push({ pid: Number(d), nome });
+      } catch { /* processo já terminou */ }
+    }
+    return lista;
+  }
+  const r = await rodarBruto("ps", ["-axo", "pid=,comm="], 8000);
+  return String(r.saida).split("\n").map((l) => l.trim().match(/^(\d+)\s+(.+)$/)).filter(Boolean).map((m) => ({ pid: Number(m[1]), nome: path.basename(m[2]) }));
+}
+
+async function fecharProcesso(pid) {
+  if (pid === process.pid) return false;
+  if (PLATAFORMA === "win32") return (await rodarBruto("taskkill", ["/PID", String(pid), "/T", "/F"], 8000)).ok;
+  try {
+    process.kill(pid, "SIGTERM");
+    setTimeout(() => { try { process.kill(pid, "SIGKILL"); } catch { /* já fechou */ } }, 2000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const avisosApp = new Map(); // app → quando avisou (não repete o aviso a cada 5 s se o aluno insistir)
+const semPermissao = new Set(); // PIDs de outro usuário/administrador: não adianta tentar de novo
+
+async function vigiarApps() {
+  const proibidos = politica?.appsBloqueados ?? [];
+  if (!proibidos.length) return;
+  const fechar = flag("aplicar-politica");
+  for (const { pid, nome } of await processosAbertos()) {
+    const app = appProibido(nome, proibidos);
+    if (!app || semPermissao.has(pid)) continue;
+    const fechou = fechar ? await fecharProcesso(pid) : false;
+    if (fechar && !fechou) semPermissao.add(pid);
+    const agora = Date.now();
+    if (agora - (avisosApp.get(app) ?? 0) < 60_000) continue;
+    avisosApp.set(app, agora);
+    const acao = fechou ? "fechado" : fechar ? "detectado (sem permissão para fechar)" : "detectado";
+    log(cor.vermelho, `✖ App proibido ${acao}: ${app} (${nome})`);
+    eventosPendentes.push({ tipo: "APP_BLOQUEADO", severidade: "AVISO", descricao: `${app} ${acao} (${nome}) — proibido pela política "${politica.nome}"`.slice(0, 300) });
+    if (fechou) void notificar("Aplicativo bloqueado", `${app} não é permitido nos computadores do espaço maker.`);
+  }
+}
+
 // ───────────────────────── comunicação com o servidor ─────────────────────────
 
 async function api(servidor, caminho, corpo, token, esperaMs = 10_000) {
@@ -1227,6 +1346,7 @@ async function main() {
   if (ligadas.length) log(cor.cinza, `  opções ligadas: ${ligadas.map((o) => `--${o}`).join(" ")}`);
   [seguranca] = await Promise.all([lerSeguranca(), coletarLento()]);
   vigiarDownloads();
+  setInterval(() => void vigiarApps().catch(() => {}), 5_000);
   setInterval(() => void coletarLento(), 15_000);
   setInterval(async () => { seguranca = await lerSeguranca(); }, 10 * 60_000);
 

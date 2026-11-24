@@ -34,7 +34,7 @@ describe("comando de instalação", () => {
     expect(servidorSeguro("ftp://x.com")).toBeNull();
   });
   it("as opções marcadas viram os argumentos do agente", () => {
-    expect(argumentosAgente(OPCOES_PADRAO)).toEqual(["--permitir-bloqueio", "--permitir-reinicio", "--instalar-servico"]);
+    expect(argumentosAgente(OPCOES_PADRAO)).toEqual(["--permitir-bloqueio", "--permitir-reinicio", "--aplicar-politica", "--instalar-servico"]);
     expect(argumentosAgente({ bloqueio: false, reinicio: false, iniciarComPc: false, politica: true })).toEqual(["--aplicar-politica"]);
   });
   it("escolhe o script pelo programa que pediu", () => {
@@ -47,9 +47,9 @@ describe("comando de instalação", () => {
     const w = scriptWindows("https://s.dev", "K7P2QX", OPCOES_PADRAO);
     expect(w.trimStart()).toMatch(/^# LabMaker[^\n]*\n& \{/);
     expect(w).toContain("$servidor = 'https://s.dev'");
-    expect(w).toContain("$extras = @('--permitir-bloqueio', '--permitir-reinicio', '--instalar-servico')");
+    expect(w).toContain("$extras = @('--permitir-bloqueio', '--permitir-reinicio', '--aplicar-politica', '--instalar-servico')");
     const u = scriptUnix("https://s.dev", "K7P2QX", { ...OPCOES_PADRAO, iniciarComPc: false });
-    expect(u).toContain("--inscricao \"$CODIGO\" --permitir-bloqueio --permitir-reinicio\n");
+    expect(u).toContain("--inscricao \"$CODIGO\" --permitir-bloqueio --permitir-reinicio --aplicar-politica\n");
     expect(scriptErro("powershell", "Código inválido")).toContain("Codigo invalido");
   });
 });

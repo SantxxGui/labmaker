@@ -83,7 +83,7 @@ Três camadas, todas automatizadas e rodando no CI (`.github/workflows/ci.yml`) 
 
 | Camada | Comando | O que prova |
 |---|---|---|
-| Unitários (114) | `npm test` | Regras puras: horários, fuso, calibração, permissões, telemetria, agente, empréstimo, limite de login, tela remota, chamados, automações (lembrete, atraso, fechamento, abertura), agendador, modo TV (situação das máquinas e privacidade), alarme de devolução, remoção de aparelho |
+| Unitários (115) | `npm test` | Regras puras: horários, fuso, calibração, permissões, telemetria, agente, empréstimo, limite de login, tela remota, chamados, automações (lembrete, atraso, fechamento, abertura), agendador, modo TV (situação das máquinas e privacidade), alarme de devolução, remoção de aparelho |
 | Ponta a ponta (150) | `npm run test:api` | Perfis e 403, o Líder cuida de tudo, aluno reserva o que acabou de ser cadastrado, empréstimo, agente (inscrição, token, check-in), suporte remoto (autorização, quadros, encerramento, 403 do aluno), SSE da tela, **pedido de ajuda → chat → tela pré-autorizada → encerramento**, lembrete automático sem repetição, **alarme de devolução 1 min após o prazo e desligado na devolução**, **remoção de aparelho (403, confirmação, emprestado bloqueia, agente desconectado)**, índice anti-duplicidade, diagnóstico, modo TV sem e-mail, teste de fechamento, push, celular pelo navegador, cookie Secure em HTTPS, redefinição de senha, Meu perfil (nome e troca de senha derrubando os outros aparelhos), revogação de sessão, força bruta → 429, cabeçalhos, CSV |
 | Concorrência (4) | `npm run test:concorrencia` | 50 pedidos simultâneos no mesmo horário → 1 reserva, 49 × 409, nenhum 500 |
 

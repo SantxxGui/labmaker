@@ -35,7 +35,7 @@ Preparo em [`DEMO-VM-CELULAR.md`](DEMO-VM-CELULAR.md) (seção "Sem notebook e s
 
 ## 6. Por dentro (2,5 min) — tudo pelo navegador
 No PC da faculdade não precisa de Node nem de VS Code: o código e os testes estão no **GitHub**.
-- Aba **Actions** do repositório → a última execução do **CI** verde: tipos, 114 testes unitários, banco criado do zero, build, **150 verificações ponta a ponta** e **concorrência: 50 pedidos simultâneos no mesmo horário → 1 reserva, 49 recusas**. Frase: *"cada envio de código roda tudo isso sozinho contra um PostgreSQL de verdade"*.
+- Aba **Actions** do repositório → a última execução do **CI** verde: tipos, 115 testes unitários, banco criado do zero, build, **150 verificações ponta a ponta** e **concorrência: 50 pedidos simultâneos no mesmo horário → 1 reserva, 49 recusas**. Frase: *"cada envio de código roda tudo isso sozinho contra um PostgreSQL de verdade"*.
 - No código (GitHub): `app/api/emprestimos/route.ts` (3 linhas) → `controllers/emprestimo.controller.ts` → `lib/emprestimo.ts` (regra pura, testada) → `models/emprestimo.model.ts`. Isso é o MVC.
 - `models/agendamento.model.ts` → `pg_advisory_xact_lock`: a trava que garante 1 reserva por horário.
 - `/api-docs` no próprio LabMaker online → a API documentada e testável, gerada dos mesmos schemas Zod que validam as requisições.
@@ -56,6 +56,7 @@ No PC da faculdade não precisa de Node nem de VS Code: o código e os testes es
 | E o celular, vocês controlam? | Pelo navegador: avisos com confirmação de leitura e bloqueio da página. Ver a tela ou controlar o celular inteiro exige MDM (Android Enterprise / Apple) — fora do escopo, de propósito. |
 | Como o chat é em tempo real sem WebSocket? | O aparelho já faz check-in; com pedido aberto o servidor reduz o intervalo para 3 s e as mensagens viajam na resposta. A tela ao vivo usa Server-Sent Events. Nenhuma porta aberta no notebook do aluno. |
 | E se o check-in e o agendador criarem o mesmo lembrete juntos? | Índice único parcial no banco (`acoes_automaticas_unicas`): o segundo recebe erro de unicidade e é ignorado. Está no teste ponta a ponta. |
+| A política bloqueia mesmo? | Bloqueio de tela, reinício, travar às 20h, **fechar aplicativos proibidos** (Roblox, Steam…) e quarentena de downloads são reais. Instalar app, USB e sites o sistema registra e confere; impor exige o agente como serviço com administrador (ou o firewall do SESI, para sites) — é a próxima fase. |
 | Dá para mexer no computador do aluno, tipo AnyDesk? | Sim: com a tela aberta, clico em **Controlar**, o aluno clica em **Permitir** e eu uso mouse e teclado dele (tem até botão para Gerenciador de Tarefas e para colar texto). Ele vê um aviso o tempo todo e pode parar na hora; tudo fica na auditoria, menos as teclas, que nunca são gravadas. |
 | E se o aluno não devolver? | 1 minuto depois do prazo o aparelho começa a apitar (tela vermelha, sirene e vibração no celular; bipe no notebook) e só para quando eu registro a devolução no balcão. |
 | E se um aparelho for trocado ou vendido? | Em **Notebooks → aparelho → Remover**: digito o nome para confirmar, ele sai da lista, o agente deixa de funcionar e o histórico continua na auditoria. |

@@ -13,7 +13,7 @@ A aplicação **nasce zerada**: nenhuma máquina, área, notebook ou reserva —
 | **Máquinas** | Telemetria, alarmes, câmera e comandos seguros via gateway (simulado; mesmo formato do real) |
 | **Notebooks e celulares** | **Agente real** (`agente/agente.mjs`, Node sem dependências): métricas, avisos nativos, bloqueio e **suporte remoto com a tela ao vivo** e **controle de mouse e teclado tipo AnyDesk** (cada um com a sua autorização e aviso fixo na tela) · inicia com o computador · **agente pelo navegador** para celulares (QR code, instalável como app, notificação push) · empréstimo com prazo |
 | **Atendimento** | Aluno toca em **Pedir ajuda** (notebook ou celular) → o pedido cai **na hora** na fila do Líder e abre uma **janelinha de chat** (no computador: Edge/Chrome em modo app, sem janela preta) com tela pré-autorizada · lembrete de devolução 15 min antes, aviso de atraso e **alarme que apita 1 min depois do prazo** até a devolução · espaço **trava sozinho às 20h** e destrava às 8h |
-| **Qualidade** | 114 testes unitários · 150 verificações ponta a ponta · teste de concorrência (50 pedidos simultâneos → 1 reserva) · CI no GitHub Actions · Docker |
+| **Qualidade** | 115 testes unitários · 150 verificações ponta a ponta · teste de concorrência (50 pedidos simultâneos → 1 reserva) · CI no GitHub Actions · Docker |
 
 ## Como rodar
 
@@ -77,7 +77,7 @@ Passo a passo da demonstração com **VM e celular**: [`docs/DEMO-VM-CELULAR.md`
 | `npm run db:reset` | Apaga, recria (migrations) e cria o espaço **zerado** |
 | `npm run db:demo` | Igual, mas com o espaço de **exemplo** |
 | `npm run db:setup` | Prepara o banco **só se estiver vazio** (deploy/Docker) |
-| `npm test` | 114 testes unitários das regras de negócio |
+| `npm test` | 115 testes unitários das regras de negócio |
 | `npm run test:api` | 150 verificações ponta a ponta contra o servidor rodando |
 | `npm run test:concorrencia` | 5 alunos × 10 pedidos simultâneos no mesmo horário → exatamente 1 reserva |
 | `npm run typecheck` | Checagem de tipos |
