@@ -14,7 +14,7 @@
  *   --tipo NOTEBOOK|DESKTOP
  *   --uma-vez             faz um único check-in e sai (testes)
  *   --testar-captura      tira uma foto da tela, salva em ./teste-captura.jpg e sai (confere se a captura funciona)
- *   --pedir-ajuda         abre o formulário "Pedir ajuda ao Líder" (cria um chamado) e sai
+ *   --pedir-ajuda         abre o pedido de ajuda na hora e a janelinha de chat com o Líder, e sai
  *   --mensagem "texto"    manda uma mensagem no chat do chamado aberto e sai
  *   --instalar-servico    o agente passa a iniciar sozinho com o computador + atalho "Pedir ajuda" na área de trabalho
  *   --remover-servico     desfaz o --instalar-servico
@@ -468,15 +468,66 @@ let chamadoAtual = null;
 let janelaChat = false;
 const filaChat = [];
 
-/** Mensagem do Líder chegou: mostra no terminal, notifica e abre uma janela para responder (sem travar o check-in). */
-function receberMensagens(mensagens) {
+let janelaAbertaEm = 0;
+
+/**
+ * Mensagem do Líder chegou: mostra no terminal, notifica e, se a janelinha de chat estiver fechada,
+ * abre de novo (sem travar o check-in). Sem navegador, cai na caixa de texto de antes.
+ */
+function receberMensagens(mensagens, janelaAberta = false) {
+  const doLider = [];
   for (const m of mensagens) {
     const quem = m.autor === "SISTEMA" ? "LabMaker" : m.autorNome?.split(" ")[0] ?? "Líder";
     log(m.autor === "SISTEMA" ? cor.cinza : cor.azul, `💬 ${quem}: ${m.texto}`);
     void notificar(m.autor === "SISTEMA" ? "Pedido de ajuda" : `Mensagem de ${quem}`, m.texto);
-    if (m.autor === "LIDER") filaChat.push(`${quem}: ${m.texto}`);
+    if (m.autor === "LIDER") doLider.push(`${quem}: ${m.texto}`);
   }
-  if (filaChat.length && !janelaChat) void abrirJanelaChat();
+  // janela aberta: a mensagem já aparece lá. Acabou de abrir: espera ela dar sinal ao servidor.
+  if (!doLider.length || janelaAberta || Date.now() - janelaAbertaEm < 45_000) return;
+  janelaAbertaEm = Date.now();
+  void (async () => {
+    const cfg = lerConfig();
+    try {
+      const r = await api(cfg.servidor, "/api/agente/chamados/janela", {}, cfg.token);
+      if (abrirJanelaApp(r.janela)) return;
+    } catch { /* cai na caixa de texto */ }
+    filaChat.push(...doLider);
+    if (!janelaChat) void abrirJanelaChat();
+  })();
+}
+
+/** O executável está no PATH? */
+const noPath = (nome) => (process.env.PATH ?? "").split(path.delimiter).some((d) => d && fs.existsSync(path.join(d, nome)));
+
+/**
+ * Abre a janelinha de chat como app: Edge ou Chrome com --app (sem abas nem barra de endereço).
+ * Sem nenhum dos dois, abre no navegador padrão. Devolve false se não conseguiu abrir nada.
+ */
+function abrirJanelaApp(url) {
+  if (!/^https?:\/\//.test(url ?? "")) return false;
+  const argsApp = [`--app=${url}`, "--window-size=430,660", "--new-window"];
+  const candidatos =
+    PLATAFORMA === "win32"
+      ? [process.env["ProgramFiles(x86)"], process.env.ProgramFiles, process.env.LOCALAPPDATA].filter(Boolean)
+          .flatMap((b) => [path.join(b, "Microsoft", "Edge", "Application", "msedge.exe"), path.join(b, "Google", "Chrome", "Application", "chrome.exe")])
+      : PLATAFORMA === "darwin"
+        ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge", "/Applications/Chromium.app/Contents/MacOS/Chromium"]
+        : ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge"];
+  for (const c of candidatos) {
+    if (path.isAbsolute(c) ? !fs.existsSync(c) : !noPath(c)) continue;
+    try {
+      spawn(c, argsApp, { detached: true, stdio: "ignore", env: AMBIENTE }).on("error", () => {}).unref();
+      return true;
+    } catch { /* próximo */ }
+  }
+  try {
+    const [cmd, argv] = PLATAFORMA === "win32" ? ["rundll32.exe", ["url.dll,FileProtocolHandler", url]] : [PLATAFORMA === "darwin" ? "open" : "xdg-open", [url]];
+    if (PLATAFORMA === "linux" && !noPath(cmd)) return false;
+    spawn(cmd, argv, { detached: true, stdio: "ignore", env: AMBIENTE }).on("error", () => {}).unref();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function abrirJanelaChat() {
@@ -516,10 +567,27 @@ async function caixaDeTexto(titulo, texto) {
   return r.ok ? String(r.saida).trim() : "";
 }
 
-/** --pedir-ajuda: formulário → chamado na fila do Líder. */
+/**
+ * --pedir-ajuda (o atalho da área de trabalho): abre o chamado NA HORA e a janelinha de chat.
+ * A pessoa conta o problema no chat; a primeira mensagem vira a descrição na fila do Líder.
+ */
 async function pedirAjuda() {
   const cfg = lerConfig();
   if (!cfg?.token) throw new Error("Este computador ainda não foi inscrito no LabMaker.");
+  void notificar("Pedir ajuda ao Líder", "Abrindo seu pedido de ajuda…");
+  // 60 s: no plano grátis o servidor pode estar "acordando" (a primeira resposta demora)
+  const r = await api(cfg.servidor, "/api/agente/chamados", { nome: os.userInfo().username }, cfg.token, 60_000);
+  const msg = r.jaExistia ? `Seu pedido #${r.chamado.numero} continua na fila do Líder.` : `Pedido #${r.chamado.numero} aberto: o Líder já foi avisado.`;
+  log(cor.verde, `✔ ${msg}`);
+  if (abrirJanelaApp(r.janela)) {
+    await notificar("Pedido de ajuda aberto", `${msg} Converse com ele na janela que abriu.`);
+    return;
+  }
+  // sem navegador nenhum: o formulário de antes (caixa de texto)
+  await pedirAjudaSemJanela(cfg, r.chamado.numero);
+}
+
+async function pedirAjudaSemJanela(cfg, numero) {
   let descricao = await caixaDeTexto("Pedir ajuda ao Líder", "O que está acontecendo? (ex.: o Inkscape não abre)");
   let autoriza;
   if (descricao === null) {
@@ -529,11 +597,10 @@ async function pedirAjuda() {
   } else if (descricao) {
     autoriza = (await dialogoSimNao("Pedir ajuda ao Líder", "Você autoriza o Líder a VER sua tela durante este atendimento?\n(Só visualização. Você pode parar quando quiser.)")) === true;
   }
-  if (!descricao || descricao.trim().length < 3) { log(cor.amarelo, "Pedido cancelado."); return; }
-  const r = await api(cfg.servidor, "/api/agente/chamados", { descricao: descricao.trim(), nome: os.userInfo().username, autorizaTela: !!autoriza }, cfg.token);
-  const msg = r.jaExistia ? `Seu pedido #${r.chamado.numero} já estava na fila — mensagem adicionada.` : `Pedido #${r.chamado.numero} enviado. O Líder vai responder por aqui.`;
-  log(cor.verde, `✔ ${msg}`);
-  await notificar("Pedido de ajuda enviado", msg);
+  if (!descricao || descricao.trim().length < 3) { log(cor.amarelo, `Pedido #${numero} aberto sem descrição: o Líder vai perguntar o que houve.`); return; }
+  await api(cfg.servidor, "/api/agente/chamados/mensagem", { texto: descricao.trim(), nome: os.userInfo().username }, cfg.token);
+  if (autoriza) await api(cfg.servidor, "/api/agente/chamados/estado", { autorizaTela: true }, cfg.token).catch(() => {});
+  await notificar("Pedido de ajuda enviado", `Pedido #${numero} enviado. O Líder vai responder por aqui.`);
 }
 
 async function dialogoSimNao(titulo, texto) {
@@ -563,7 +630,11 @@ function arquivosDoServico() {
   })();
   if (PLATAFORMA === "win32") {
     const inicio = path.join(process.env.APPDATA ?? path.join(home, "AppData", "Roaming"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup");
-    return { inicio: path.join(inicio, "LabMaker Agente.cmd"), atalho: path.join(area, "Pedir ajuda ao Líder.cmd") };
+    // atalho .lnk → wscript + .vbs: abre o "Pedir ajuda" sem nenhuma janela preta
+    return {
+      inicio: path.join(inicio, "LabMaker Agente.cmd"), atalho: path.join(area, "Pedir ajuda ao Líder.lnk"),
+      vbs: path.join(path.dirname(path.resolve(process.argv[1])), "pedir-ajuda.vbs"), antigos: [path.join(area, "Pedir ajuda ao Líder.cmd")],
+    };
   }
   if (PLATAFORMA === "darwin") return { inicio: path.join(home, "Library", "LaunchAgents", "dev.labmaker.agente.plist"), atalho: path.join(area, "Pedir ajuda ao Líder.command") };
   return { inicio: path.join(home, ".config", "autostart", "labmaker-agente.desktop"), atalho: path.join(area, "pedir-ajuda-labmaker.desktop") };
@@ -582,7 +653,14 @@ async function instalarServico() {
   fs.mkdirSync(path.dirname(atalho), { recursive: true });
   if (PLATAFORMA === "win32") {
     fs.writeFileSync(inicio, `@echo off\r\nstart "Agente LabMaker" /min "${node}" "${script}"\r\n`);
-    fs.writeFileSync(atalho, `@echo off\r\n"${node}" "${script}" --pedir-ajuda\r\n`);
+    const { vbs, antigos } = arquivosDoServico();
+    fs.writeFileSync(vbs, `' LabMaker: abre o pedido de ajuda e a janelinha de chat, sem janela preta\r\nCreateObject("WScript.Shell").Run """${node}"" ""${script}"" --pedir-ajuda", 0, False\r\n`);
+    const q = (t) => t.replace(/'/g, "''");
+    await rodarBruto("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      `$s = (New-Object -ComObject WScript.Shell).CreateShortcut('${q(atalho)}'); $s.TargetPath = "$env:SystemRoot\\System32\\wscript.exe"; ` +
+      `$s.Arguments = '"${q(vbs)}"'; $s.IconLocation = "$env:SystemRoot\\System32\\shell32.dll,23"; $s.Description = 'Abre um pedido de ajuda no LabMaker'; $s.Save()`], 15_000);
+    if (fs.existsSync(atalho)) for (const a of antigos) { try { fs.unlinkSync(a); } catch { /* não existia */ } }
+    else fs.writeFileSync(antigos[0], `@echo off\r\nstart "" /min "${node}" "${script}" --pedir-ajuda\r\n`); // sem PowerShell/COM: o .cmd de antes
   } else if (PLATAFORMA === "darwin") {
     fs.writeFileSync(inicio, `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -611,9 +689,9 @@ async function instalarServico() {
 }
 
 function removerServico() {
-  const { inicio, atalho } = arquivosDoServico();
+  const { inicio, atalho, vbs, antigos = [] } = arquivosDoServico();
   if (PLATAFORMA === "darwin") void rodarBruto("launchctl", ["unload", inicio]);
-  for (const f of [inicio, atalho]) { try { fs.unlinkSync(f); } catch { /* já não existia */ } }
+  for (const f of [inicio, atalho, vbs, ...antigos].filter(Boolean)) { try { fs.unlinkSync(f); } catch { /* já não existia */ } }
   const cfg = lerConfig();
   if (cfg?.opcoes) { delete cfg.opcoes; salvarConfig(cfg); }
   log(cor.verde, "✔ Início automático e atalho removidos.");
@@ -648,12 +726,12 @@ function vigiarDownloads() {
 
 // ───────────────────────── comunicação com o servidor ─────────────────────────
 
-async function api(servidor, caminho, corpo, token) {
+async function api(servidor, caminho, corpo, token, esperaMs = 10_000) {
   const r = await fetch(`${servidor}${caminho}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(corpo),
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(esperaMs),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
@@ -716,7 +794,7 @@ async function checkin(cfg) {
     else if (chamadoAtual) log(cor.verde, `🛟 pedido de ajuda #${chamadoAtual.numero} encerrado`);
     chamadoAtual = r.chamado ?? null;
   }
-  if (r.mensagens?.length) receberMensagens(r.mensagens);
+  if (r.mensagens?.length) receberMensagens(r.mensagens, !!r.janelaAjuda);
   const novas = r.acoes ?? [];
   // Bloqueio até o Líder liberar: se a pessoa destravar o Windows com a senha dela, o agente
   // trava de novo no próximo check-in (a cada 5 s enquanto estiver bloqueado).
@@ -742,7 +820,17 @@ async function main() {
     log(cor.verde, `✔ Captura funcionando: ${arq} (${Math.round(q.imagem.length * 0.75 / 1024)} KB)`);
     process.exit(0);
   }
-  if (args.includes("--pedir-ajuda")) { await pedirAjuda(); process.exit(0); }
+  if (args.includes("--pedir-ajuda")) {
+    // pelo atalho o agente roda escondido: qualquer erro precisa virar aviso na tela
+    try { await pedirAjuda(); } catch (e) {
+      log(cor.vermelho, `✖ ${e.message}`);
+      await notificar("Não deu para pedir ajuda", `${e.message}. Confira a internet ou chame o Líder do espaço pessoalmente.`);
+      await dialogoSimNao("Pedir ajuda ao Líder", `Não consegui falar com o LabMaker agora (${e.message}).\nConfira a internet ou chame o Líder do espaço pessoalmente.\n\nTentar de novo?`).then(async (denovo) => {
+        if (denovo) await pedirAjuda().catch(() => {});
+      });
+    }
+    process.exit(0);
+  }
   if (opt("mensagem")) {
     const c = lerConfig();
     await api(c.servidor, "/api/agente/chamados/mensagem", { texto: opt("mensagem"), nome: os.userInfo().username }, c.token);

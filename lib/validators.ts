@@ -249,9 +249,15 @@ export const telaQuadroSchema = z.object({
 // ───────────────────────── Atendimento e push (agente) ─────────────────────────
 
 export const agenteChamadoSchema = z.object({
-  descricao: z.string().trim().min(3, "Descreva o problema em poucas palavras.").max(500),
+  /** sem descrição = aberto pelo atalho; a pessoa conta o problema na janelinha de chat */
+  descricao: z.string().trim().min(3, "Descreva o problema em poucas palavras.").max(500).optional(),
   nome: z.string().trim().max(60).optional(),
   autorizaTela: z.boolean().default(false),
+});
+
+export const agenteJanelaEstadoSchema = z.object({
+  /** a pessoa ligou/desligou "o Líder pode ver minha tela" na janelinha */
+  autorizaTela: z.boolean().optional(),
 });
 
 export const agenteMensagemSchema = z.object({

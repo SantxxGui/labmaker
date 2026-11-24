@@ -96,6 +96,8 @@ Autenticação: cookie `labops_session` (JWT httpOnly) obtido em `POST /api/auth
 | `POST` | `/api/agente/inscrever` | Agente troca o código por um token próprio (lmk_…) | público |
 | `POST` | `/api/agente/checkin` | Check-in a cada 15 s: envia telemetria/eventos/resultados, recebe ações | token do agente |
 | `GET` | `/api/agente/script` | Baixar o agente (agente.mjs) para instalar num computador ou VM | público |
+| `POST` | `/api/agente/chamados/janela` | Endereço da janelinha de chat (chave de 12 h só para o chat daquele aparelho) | agente |
+| `POST` | `/api/agente/chamados/estado` | Janelinha lê a conversa, avisa que está aberta e liga/desliga "o Líder pode ver minha tela" | agente ou janelinha |
 | `GET` | `/i/{codigo}` | Instalação em um comando: script PowerShell (`irm … \| iex`) ou sh (`curl … \| sh`) conforme quem pede; 5 códigos errados por IP → 15 min de espera | público |
 | `POST` | `/api/agente/chamados` | Pedir ajuda ao Líder (abre um chamado; um por aparelho) | token do agente |
 | `POST` | `/api/agente/chamados/mensagem` | Responder no chat do chamado aberto | token do agente |
@@ -144,6 +146,6 @@ Autenticação: cookie `labops_session` (JWT httpOnly) obtido em `POST /api/auth
 B=http://localhost:3000
 curl -c c.txt -X POST $B/api/auth/login -H 'Content-Type: application/json' -d '{"email":"lider@labmaker.dev","senha":"labmaker123"}'
 curl -b c.txt $B/api/equipamentos
-npm run test:api           # 125 verificações ponta a ponta
+npm run test:api           # 133 verificações ponta a ponta
 npm run test:concorrencia  # 50 pedidos simultâneos → 1 reserva
 ```

@@ -85,6 +85,28 @@ export async function assinarInscricao(dados: { politicaId: string | null; labor
     .sign(getSecret());
 }
 
+/**
+ * Chave da janelinha de ajuda (chat do "Pedir ajuda" no computador). O agente pede uma ao servidor
+ * e abre /ajuda#t=CHAVE; a chave só serve para o chat do chamado daquele aparelho e vence em 12 h
+ * — nunca é o token do agente (que fica só no computador).
+ */
+export async function assinarJanelaAjuda(dispositivoId: string) {
+  return new SignJWT({ dispositivoId, fim: "janela-ajuda" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("12h")
+    .sign(getSecret());
+}
+
+export async function verificarJanelaAjuda(chave: string): Promise<string | null> {
+  try {
+    const { payload } = await jwtVerify(chave, getSecret(), { algorithms: ["HS256"] });
+    return payload.fim === "janela-ajuda" && typeof payload.dispositivoId === "string" ? payload.dispositivoId : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function verificarInscricao(codigo: string) {
   try {
     const { payload } = await jwtVerify(codigo, getSecret(), { algorithms: ["HS256"] });

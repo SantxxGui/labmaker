@@ -13,3 +13,21 @@ export function transicaoChamado(atual: StatusChamado, acao: "atender" | "resolv
 
 /** A sessão de tela de um chamado pode pular a janela "Permitir/Recusar"? Só se o próprio usuário autorizou ao abrir. */
 export const parametroTelaDoChamado = (chamadoId: string, preAutorizado: boolean) => `chamado:${chamadoId}${preAutorizado ? ":pre-autorizado" : ""}`;
+
+/** Descrição do chamado aberto pelo atalho, antes de a pessoa escrever: a primeira mensagem vira a descrição. */
+export const DESCRICAO_ATALHO = "Pediu ajuda pelo atalho (conta o problema no chat)";
+
+/** A janelinha de chat avisa o servidor a cada 2 s; sem aviso por mais que isto, ela foi fechada. */
+export const JANELA_AJUDA_VIVA_MS = 8_000;
+
+export function janelaAjudaAberta(ultimoSinal: number | undefined, agora = Date.now()) {
+  return ultimoSinal !== undefined && agora - ultimoSinal < JANELA_AJUDA_VIVA_MS;
+}
+
+// Último sinal de cada janelinha (em memória; reiniciar o servidor só faz o agente reabrir a janela)
+const g = globalThis as unknown as { __labmakerJanelasAjuda?: Map<string, number> };
+const sinais = (g.__labmakerJanelasAjuda ??= new Map<string, number>());
+export const JanelaAjuda = {
+  marcar: (dispositivoId: string, agora = Date.now()) => void sinais.set(dispositivoId, agora),
+  aberta: (dispositivoId: string, agora = Date.now()) => janelaAjudaAberta(sinais.get(dispositivoId), agora),
+};

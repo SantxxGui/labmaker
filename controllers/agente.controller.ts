@@ -15,13 +15,13 @@ import { alarmeDevolucao } from "@/lib/emprestimo";
 
 const CHECKIN_ALARME_S = 5;
 import { ApiError, autorizar, handler, ipDe, json } from "@/lib/api";
-import { assinarInscricao, verificarInscricao } from "@/lib/session";
+import { assinarInscricao, assinarJanelaAjuda, verificarInscricao, verificarJanelaAjuda } from "@/lib/session";
 import { automacoesDoCheckin } from "@/lib/automacao";
-import { CHECKIN_ATENDIMENTO_S } from "@/lib/chamados";
+import { CHECKIN_ATENDIMENTO_S, DESCRICAO_ATALHO, JanelaAjuda } from "@/lib/chamados";
 import { chavesVapid } from "@/lib/push";
 import { INTERVALO_QUADRO_MS, TAMANHO_MAX_BYTES, TelaStore, avaliarQuadro } from "@/lib/tela-remota";
 import { ChamadoModel } from "@/models/chamado.model";
-import { agenteChamadoSchema, agenteCheckinSchema, agenteInscreverSchema, agenteMensagemSchema, agentePushSchema, inscricaoSchema, telaQuadroSchema } from "@/lib/validators";
+import { agenteChamadoSchema, agenteJanelaEstadoSchema, agenteCheckinSchema, agenteInscreverSchema, agenteMensagemSchema, agentePushSchema, inscricaoSchema, telaQuadroSchema } from "@/lib/validators";
 import { AgenteModel } from "@/models/agente.model";
 import { ConviteModel, type Convite } from "@/models/convite.model";
 import { TentativaLoginModel } from "@/models/tentativa-login.model";
@@ -39,6 +39,20 @@ async function dispositivoDoToken(req: Request) {
   if (!token.startsWith("lmk_")) throw new ApiError(401, "Token do agente ausente ou inválido.");
   const d = await AgenteModel.porToken(sha256(token));
   if (!d || !d.ativo) throw new ApiError(401, "Token do agente ausente ou inválido.");
+  return d;
+}
+
+/**
+ * Quem fala no chat: o agente (token lmk_…) ou a janelinha de ajuda (chave de 12 h que só vale para o
+ * chat daquele aparelho). Endpoints de telemetria e comandos continuam aceitando só o token do agente.
+ */
+async function aparelhoDoChat(req: Request): Promise<{ id: string; hostname: string }> {
+  const auth = req.headers.get("authorization") ?? "";
+  const chave = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (chave.startsWith("lmk_")) return dispositivoDoToken(req);
+  const id = chave ? await verificarJanelaAjuda(chave) : null;
+  const d = id ? await AgenteModel.porId(id) : null;
+  if (!d || !d.ativo) throw new ApiError(401, "Esta janela venceu. Clique de novo em “Pedir ajuda ao Líder”.");
   return d;
 }
 
@@ -199,6 +213,8 @@ export const AgenteController = {
         agora: new Date(),
         devolucao: alarme && { prazoEm: alarme.prazoEm, alarmeEm: alarme.alarmeEm, tocando: alarme.tocando },
         chamado: chamado && { id: chamado.id, numero: chamado.numero, status: chamado.status, descricao: chamado.descricao, atendente: chamado.atendidoPor?.nome ?? null },
+        /** a janelinha de chat está aberta no computador? (se não, o agente a abre quando o Líder escrever) */
+        janelaAjuda: JanelaAjuda.aberta(d.id),
         mensagens,
       },
       { headers: { "Cache-Control": "no-store" } },
@@ -255,40 +271,81 @@ export const AgenteController = {
 
   /** POST /api/agente/chamados — o usuário do aparelho pede ajuda ao Líder */
   abrirChamado: handler(async (req: Request) => {
-    const d = await dispositivoDoToken(req);
+    const d = await aparelhoDoChat(req);
     const b = agenteChamadoSchema.parse(await req.json());
+    const janela = `${origemDe(req)}/ajuda#t=${await assinarJanelaAjuda(d.id)}`;
     const existente = await ChamadoModel.aberto(d.id);
     if (existente) {
       // já tem um aberto: a nova descrição entra como mensagem, sem duplicar a fila
-      await ChamadoModel.mensagem(existente.id, "USUARIO", b.nome ?? null, b.descricao);
-      return json({ chamado: { id: existente.id, numero: existente.numero, status: existente.status }, jaExistia: true });
+      if (b.descricao) await ChamadoModel.mensagem(existente.id, "USUARIO", b.nome ?? null, b.descricao);
+      return json({ chamado: { id: existente.id, numero: existente.numero, status: existente.status }, jaExistia: true, janela });
     }
+    const descricao = b.descricao ?? DESCRICAO_ATALHO;
     let chamado;
     try {
-      chamado = await ChamadoModel.criar({ dispositivoId: d.id, descricao: b.descricao, nomeSolicitante: b.nome ?? null, autorizaTela: b.autorizaTela });
+      chamado = await ChamadoModel.criar({ dispositivoId: d.id, descricao, nomeSolicitante: b.nome ?? null, autorizaTela: b.autorizaTela });
     } catch (e) {
       if ((e as { code?: string }).code === "P2002") throw new ApiError(409, "Já existe um pedido de ajuda aberto neste aparelho.");
       throw e;
     }
     await AuditoriaModel.registrar({
       autor: null, acao: "chamado.aberto", entidade: "chamado", entidadeId: chamado.id, ip: ipDe(req),
-      resumo: `${b.nome ?? "Usuário"} pediu ajuda em ${d.hostname} (#${chamado.numero}): ${b.descricao.slice(0, 80)}${b.autorizaTela ? " · autorizou ver a tela" : ""}`,
+      resumo: `${b.nome ?? "Usuário"} pediu ajuda em ${d.hostname} (#${chamado.numero}): ${descricao.slice(0, 80)}${b.autorizaTela ? " · autorizou ver a tela" : ""}`,
     });
-    return json({ chamado: { id: chamado.id, numero: chamado.numero, status: chamado.status } }, 201);
+    return json({ chamado: { id: chamado.id, numero: chamado.numero, status: chamado.status }, janela }, 201);
+  }),
+
+  /** POST /api/agente/chamados/janela — endereço da janelinha de chat (o agente reabre quando o Líder escreve) */
+  janelaChamado: handler(async (req: Request) => {
+    const d = await dispositivoDoToken(req);
+    return json({ janela: `${origemDe(req)}/ajuda#t=${await assinarJanelaAjuda(d.id)}` });
+  }),
+
+  /**
+   * POST /api/agente/chamados/estado — a janelinha lê a conversa inteira (a cada 2 s) e avisa que
+   * continua aberta. Pode ligar/desligar "o Líder pode ver minha tela".
+   */
+  estadoChamado: handler(async (req: Request) => {
+    const d = await aparelhoDoChat(req);
+    const b = agenteJanelaEstadoSchema.parse(await req.json().catch(() => ({})));
+    JanelaAjuda.marcar(d.id);
+    const aberto = await ChamadoModel.aberto(d.id);
+    if (aberto && b.autorizaTela !== undefined && b.autorizaTela !== aberto.autorizaTela) {
+      await ChamadoModel.atualizar(aberto.id, { autorizaTela: b.autorizaTela });
+      await AuditoriaModel.registrar({
+        autor: null, acao: b.autorizaTela ? "chamado.tela_autorizada" : "chamado.tela_desautorizada", entidade: "chamado", entidadeId: aberto.id, ip: ipDe(req),
+        resumo: `O usuário de ${d.hostname} ${b.autorizaTela ? "autorizou" : "tirou a autorização de"} o Líder ver a tela no pedido #${aberto.numero}`,
+      });
+    }
+    const c = aberto ? await ChamadoModel.buscar(aberto.id) : null;
+    return json(
+      {
+        hostname: d.hostname,
+        chamado: c && {
+          id: c.id, numero: c.numero, status: c.status, autorizaTela: c.autorizaTela,
+          descricao: c.descricao === DESCRICAO_ATALHO ? null : c.descricao,
+          atendente: c.atendidoPor?.nome ?? null,
+          mensagens: (c.mensagens ?? []).map((m) => ({ id: m.id, autor: m.autor, autorNome: m.autorNome, texto: m.texto, criadoEm: m.criadoEm })),
+        },
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   }),
 
   /** POST /api/agente/chamados/mensagem — o usuário responde no chat do chamado aberto */
   mensagemChamado: handler(async (req: Request) => {
-    const d = await dispositivoDoToken(req);
+    const d = await aparelhoDoChat(req);
     const b = agenteMensagemSchema.parse(await req.json());
     const chamado = await ChamadoModel.aberto(d.id);
     if (!chamado) throw new ApiError(404, "Não há pedido de ajuda aberto neste aparelho.");
+    // aberto pelo atalho: a primeira coisa que a pessoa escreve vira a descrição na fila do Líder
+    if (chamado.descricao === DESCRICAO_ATALHO) await ChamadoModel.atualizar(chamado.id, { descricao: b.texto.slice(0, 500) });
     return json({ mensagem: await ChamadoModel.mensagem(chamado.id, "USUARIO", b.nome ?? null, b.texto) }, 201);
   }),
 
   /** POST /api/agente/chamados/cancelar — o usuário resolveu sozinho */
   cancelarChamado: handler(async (req: Request) => {
-    const d = await dispositivoDoToken(req);
+    const d = await aparelhoDoChat(req);
     const chamado = await ChamadoModel.aberto(d.id);
     if (!chamado) return json({ ok: true });
     await ChamadoModel.mudarStatus(chamado.id, "CANCELADO");

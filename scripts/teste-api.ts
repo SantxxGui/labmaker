@@ -158,6 +158,22 @@ async function main() {
   confere("Líder inicia uma conversa pelo aparelho", ini.status === 201 && ini.json?.chamado?.status === "EM_ATENDIMENTO");
   await lider.post(`/api/chamados/${ini.json!.chamado.id}/resolver`);
 
+  // ── Janelinha de ajuda: atalho abre o chamado na hora (sem descrição) + chat numa janela própria
+  const atalho = await anon.req("POST", "/api/agente/chamados", { nome: "aluno.teste" }, agenteH);
+  const urlJanela = String(atalho.json?.janela ?? "");
+  confere("atalho abre o pedido na hora, sem descrição, e devolve a janelinha", atalho.status === 201 && /\/ajuda#t=[\w.-]+$/.test(urlJanela));
+  const janelaH = { Authorization: `Bearer ${urlJanela.split("#t=")[1]}` };
+  const est1 = await anon.req("POST", "/api/agente/chamados/estado", {}, janelaH);
+  confere("janelinha lê o próprio pedido com a chave dela", est1.status === 200 && est1.json?.chamado?.numero === atalho.json?.chamado?.numero && est1.json?.chamado?.descricao === null);
+  confere("check-in sabe que a janelinha está aberta", (await checkin()).json?.janelaAjuda === true);
+  await anon.req("POST", "/api/agente/chamados/mensagem", { texto: "A impressora 3D não aparece" }, janelaH);
+  confere("primeira mensagem da janelinha vira a descrição na fila", (await lider.get(`/api/chamados/${atalho.json!.chamado.id}`)).json?.chamado?.descricao === "A impressora 3D não aparece");
+  confere("janelinha liga 'o Líder pode ver minha tela'", (await anon.req("POST", "/api/agente/chamados/estado", { autorizaTela: true }, janelaH)).json?.chamado?.autorizaTela === true);
+  confere("chave da janelinha NÃO serve para o check-in do agente", (await anon.req("POST", "/api/agente/checkin", { agenteVersao: "4.6.0" }, janelaH)).status === 401);
+  confere("chave inventada na janelinha → 401", (await anon.req("POST", "/api/agente/chamados/estado", {}, { Authorization: "Bearer eyJ.falso.x" })).status === 401);
+  confere("janelinha cancela o pedido", (await anon.req("POST", "/api/agente/chamados/cancelar", {}, janelaH)).status === 200
+    && (await anon.req("POST", "/api/agente/chamados/estado", {}, janelaH)).json?.chamado === null);
+
   // ── Automação: lembrete de devolução 15 min antes (o check-in é o relógio)
   const cka4 = (r: { json?: { devolucao?: { tocando?: boolean; alarmeEm?: string } } | null }) => r.json?.devolucao?.tocando === false && !!r.json?.devolucao?.alarmeEm;
   const empAg = await lider.post("/api/emprestimos", { dispositivoId: agId, usuarioId: alunoId, prazoEm: new Date(Date.now() + 20 * 60_000).toISOString() });

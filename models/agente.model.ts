@@ -44,6 +44,11 @@ export const AgenteModel = {
     });
   },
 
+  /** Aparelho pela id (janelinha de ajuda, que não tem o token do agente). */
+  porId(id: string) {
+    return prisma.dispositivo.findUnique({ where: { id }, select: { id: true, hostname: true, ativo: true } });
+  },
+
   porToken(tokenHash: string) {
     return prisma.dispositivo.findUnique({
       where: { agenteTokenHash: tokenHash },
