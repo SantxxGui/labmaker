@@ -167,6 +167,7 @@ export function AtendimentoView({ inicial, selecionadoInicial }: { inicial: Cham
                 <div className="min-h-0 overflow-y-auto border-b border-line xl:border-b-0 xl:border-r">
                   <TelaRemotaAoVivo
                     dispositivoId={sel.dispositivo.id} hostname={sel.dispositivo.hostname} online={sel.dispositivo.online} podeComandar
+                    controlavel={sel.dispositivo.agenteReal && (sel.dispositivo.so === "WINDOWS" || sel.dispositivo.so === "LINUX") && sel.dispositivo.tipo !== "SMARTPHONE" && sel.dispositivo.tipo !== "TABLET"}
                     onPedir={() => acao("tela", () => api(`/api/chamados/${sel.id}/tela`, { method: "POST" }))}
                   />
                 </div>

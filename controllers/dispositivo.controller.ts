@@ -4,8 +4,8 @@ import { avaliarAcao, avaliarRemocao, efeitoAcao, estaOnline, eventoDaAcao } fro
 import { ApiError, autorizar, handler, ipDe, json } from "@/lib/api";
 import { ACAO_DISPOSITIVO_LABEL, MODO_DOWNLOAD_LABEL } from "@/lib/labels";
 import { notificarAparelho } from "@/lib/push";
-import { TelaStore, estadoSessao, telaEventos } from "@/lib/tela-remota";
-import { acaoDispositivoSchema, alertaSchema, dispositivoCreateSchema, politicaPatchSchema, removerDispositivoSchema } from "@/lib/validators";
+import { TelaStore, avaliarPedidoControle, estadoSessao, telaEventos } from "@/lib/tela-remota";
+import { acaoDispositivoSchema, alertaSchema, dispositivoCreateSchema, politicaPatchSchema, removerDispositivoSchema, telaControleSchema } from "@/lib/validators";
 import { AuditoriaModel } from "@/models/auditoria.model";
 import { AcaoDispositivoModel, DispositivoModel, EventoDispositivoModel, PoliticaModel } from "@/models/dispositivo.model";
 
@@ -214,6 +214,48 @@ export const DispositivoController = {
       autor: s, acao: "dispositivo.tela_encerrada", entidade: "dispositivo", entidadeId: id, ip: ipDe(req),
       resumo: `Encerrou o suporte remoto em ${d?.hostname ?? id} (${minutos} min)`,
     });
+    return json({ ok: true });
+  }),
+
+  /**
+   * POST /api/dispositivos/:id/tela/controle — controle remoto (mouse e teclado), tipo AnyDesk:
+   *  { acao: "pedir" }  → o usuário vê "Permitir que o Líder controle?" no computador;
+   *  { acao: "soltar" } → devolve o controle (a tela continua ao vivo);
+   *  { eventos: [...] } → mouse/teclado, só com o controle já permitido. Teclas nunca são gravadas.
+   */
+  telaControle: handler(async (req: Request, ctx: Ctx) => {
+    const s = await autorizar("dispositivo:comandar");
+    const { id } = await ctx.params;
+    const corpo = telaControleSchema.parse(await req.json());
+    const sessao = TelaStore.buscar(id);
+    if ("eventos" in corpo) {
+      if (!sessao || !estadoSessao(sessao).ativa || sessao.controle !== "ativo") {
+        throw new ApiError(409, "O controle não está ativo: peça o controle e espere o usuário permitir.");
+      }
+      TelaStore.adicionarEventos(id, corpo.eventos);
+      return json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
+    }
+    const d = await DispositivoModel.buscar(id);
+    const nome = d?.hostname ?? id;
+    if (corpo.acao === "pedir") {
+      const v = avaliarPedidoControle(sessao);
+      if (!v.ok) throw new ApiError(409, v.motivo);
+      TelaStore.pedirControle(id, s.nome);
+      await AuditoriaModel.registrar({
+        autor: s, acao: "dispositivo.controle_pedido", entidade: "dispositivo", entidadeId: id, ip: ipDe(req),
+        resumo: `Pediu para controlar o mouse e o teclado de ${nome}`,
+      });
+      return json({ ok: true });
+    }
+    if (!sessao || sessao.controle === "nenhum") return json({ ok: true });
+    const estavaAtivo = sessao.controle === "ativo";
+    const total = TelaStore.soltarControle(id);
+    if (estavaAtivo) {
+      await AuditoriaModel.registrar({
+        autor: s, acao: "dispositivo.controle_encerrado", entidade: "dispositivo", entidadeId: id, ip: ipDe(req),
+        resumo: `Devolveu o controle de ${nome} (${total} eventos de mouse e teclado aplicados)`,
+      });
+    }
     return json({ ok: true });
   }),
 

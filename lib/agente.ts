@@ -30,6 +30,12 @@ export type TelemetriaAgente = {
 };
 /** Versão atual do agente — abaixo disso a conformidade reprova. */
 export const AGENTE_ATUAL = "4.6";
+/** O controle remoto (mouse e teclado) chegou no agente 4.9.0: antes disso, a tela só pode ser vista. */
+export const AGENTE_CONTROLE = "4.9.0";
+/** Este agente sabe ser controlado? (instalado — não pelo navegador —, em Windows ou Linux, versão nova) */
+export function aceitaControle(d: { agenteVersao: string; so: string }) {
+  return !d.agenteVersao.startsWith("web") && (d.so === "WINDOWS" || d.so === "LINUX") && !versaoMenor(d.agenteVersao, AGENTE_CONTROLE);
+}
 
 // ───────────────────────── catálogo e categorias ─────────────────────────
 
@@ -190,7 +196,7 @@ export type DispositivoParaConformidade = {
   telemetria?: unknown;
 };
 
-const versaoMenor = (a: string, b: string) => {
+export const versaoMenor = (a: string, b: string) => {
   const [x, y] = [a.split(".").map(Number), b.split(".").map(Number)];
   for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
   return false;

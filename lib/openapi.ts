@@ -57,6 +57,7 @@ export const ROTAS: [Metodo, string, Op][] = [
   ["get", "/api/dispositivos/{id}/tela", { tag: "Notebooks", resumo: "Suporte remoto: último pedido e sessão de tela ao vivo", perm: "dispositivo:comandar" }],
   ["get", "/api/dispositivos/{id}/tela/imagem", { tag: "Notebooks", resumo: "Último quadro da tela compartilhada (JPEG/PNG)", perm: "dispositivo:comandar", respostas: { 200: "Imagem", 404: "Nenhuma tela sendo compartilhada" } }],
   ["post", "/api/dispositivos/{id}/tela/encerrar", { tag: "Notebooks", resumo: "Encerrar o compartilhamento de tela", perm: "dispositivo:comandar" }],
+  ["post", "/api/dispositivos/{id}/tela/controle", { tag: "Notebooks", resumo: "Controle remoto (mouse e teclado): pedir, devolver ou mandar eventos — só depois que o usuário permitir", perm: "dispositivo:comandar", corpo: v.telaControleSchema, respostas: { 200: "Ok", 409: "Sem tela ao vivo ou controle não permitido" } }],
   ["get", "/api/dispositivos/{id}/tela/eventos", { tag: "Notebooks", resumo: "Tela ao vivo por Server-Sent Events (estado, quadro, início, fim; pulso a cada 15 s)", perm: "dispositivo:comandar", respostas: { 200: "text/event-stream" } }],
   ["post", "/api/dispositivos/{id}/atendimento", { tag: "Atendimento", resumo: "Líder inicia uma conversa com o aparelho (abre um chamado já em atendimento)", perm: "dispositivo:comandar", respostas: { 201: "Chamado criado", 200: "Já havia um chamado aberto" } }],
   ["post", "/api/dispositivos/inscricao", { tag: "Agente", resumo: "Gerar código de inscrição de 6 letras (válido 2, 12 ou 24 h) e o comando de instalação", perm: "dispositivo:cadastrar", corpo: v.inscricaoSchema }],
@@ -79,6 +80,9 @@ export const ROTAS: [Metodo, string, Op][] = [
   ["post", "/api/agente/chamados/cancelar", { tag: "Agente", resumo: "Cancelar o próprio pedido de ajuda (resolveu sozinho)", agente: true }],
   ["get", "/api/agente/push", { tag: "Agente", resumo: "Chave pública VAPID para a inscrição Web Push", publico: true }],
   ["post", "/api/agente/push", { tag: "Agente", resumo: "Salvar (ou apagar com null) a inscrição Web Push do aparelho", agente: true, corpo: v.agentePushSchema }],
+  ["post", "/api/agente/chamados/janela", { tag: "Agente", resumo: "Endereço da janelinha de chat do 'Pedir ajuda' (chave de 12 h só para o chat daquele aparelho)", agente: true, respostas: { 200: "{ janela }", 401: "Token inválido" } }],
+  ["post", "/api/agente/chamados/estado", { tag: "Agente", resumo: "A janelinha lê a conversa, avisa que está aberta e liga/desliga 'o Líder pode ver minha tela'", agente: true, corpo: v.agenteJanelaEstadoSchema, respostas: { 200: "{ hostname, chamado }", 401: "Chave vencida" } }],
+  ["post", "/api/agente/tela/controle", { tag: "Agente", resumo: "O agente busca os eventos de mouse/teclado do Líder (espera longa de até 20 s)", agente: true, corpo: v.agenteControleSchema, respostas: { 200: "{ continuar, eventos }", 401: "Token inválido" } }],
   ["post", "/api/agente/tela", { tag: "Agente", resumo: "Envia um quadro da tela depois que o usuário autorizou o suporte remoto (ou fim: true)", agente: true, corpo: v.telaQuadroSchema, respostas: { 200: "{ continuar } — se o agente segue transmitindo", 401: "Token inválido", 413: "Quadro maior que 3 MB" } }],
 
   // Atendimento

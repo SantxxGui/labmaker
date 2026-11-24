@@ -150,6 +150,35 @@ async function main() {
   confere("pedido de tela chega pré-autorizado (sem nova pergunta)", !!pre?.parametro?.endsWith(":pre-autorizado"), pre?.parametro);
   confere("tela pré-autorizada transmite", (await anon.req("POST", "/api/agente/tela", { acaoId: pre.id, imagem: JPEG, tipo: "image/jpeg" }, agenteH)).json?.continuar === true);
   confere("tela sem mudança: só avisa (mesmo: true)", (await anon.req("POST", "/api/agente/tela", { acaoId: pre.id, mesmo: true }, agenteH)).json?.continuar === true);
+
+  // ── Controle remoto (mouse e teclado): segundo consentimento, fila de eventos, devolução
+  const ctl = (corpo: unknown) => lider.post(`/api/dispositivos/${agId}/tela/controle`, corpo);
+  const quadroAg = (extra: Record<string, unknown> = {}) => anon.req("POST", "/api/agente/tela", { acaoId: pre.id, mesmo: true, ...extra }, agenteH);
+  confere("aluno NÃO pede o controle", (await aluno.post(`/api/dispositivos/${agId}/tela/controle`, { acao: "pedir" })).status === 403);
+  confere("eventos antes de o usuário permitir → 409", (await ctl({ eventos: [{ t: "m", x: 0.5, y: 0.5 }] })).status === 409);
+  confere("Líder pede o controle", (await ctl({ acao: "pedir" })).status === 200);
+  confere("pedir de novo enquanto espera → 409", (await ctl({ acao: "pedir" })).status === 409);
+  confere("o agente fica sabendo do pedido no próximo quadro", (await quadroAg()).json?.controle === "pedido");
+  confere("sistema sem controle responde 'indisponível'", (await quadroAg({ controle: "indisponivel" })).json?.controle === "indisponivel");
+  confere("depois de 'indisponível' ou 'recusado' dá para pedir de novo", (await ctl({ acao: "pedir" })).status === 200);
+  const aceito = await quadroAg({ controle: "aceito" });
+  confere("usuário permite: controle ativo e tela a ~4 quadros/s", aceito.json?.controle === "ativo" && aceito.json?.intervaloMs === 250);
+  confere("tecla inválida → 422", (await ctl({ eventos: [{ t: "k", c: "Key A;rm", d: true }] })).status === 422);
+  confere("coordenada fora da tela → 422", (await ctl({ eventos: [{ t: "m", x: 1.5, y: 0.2 }] })).status === 422);
+  confere("Líder manda mouse e teclado", (await ctl({ eventos: [{ t: "m", x: 0.1, y: 0.1 }, { t: "m", x: 0.4, y: 0.6 }, { t: "b", b: 0, d: true, x: 0.4, y: 0.6 }, { t: "b", b: 0, d: false, x: 0.4, y: 0.6 }, { t: "k", c: "KeyA", d: true }, { t: "k", c: "KeyA", d: false }, { t: "txt", s: "olá" }] })).status === 200);
+  const busca = await anon.req("POST", "/api/agente/tela/controle", { acaoId: pre.id }, agenteH);
+  confere("agente recebe os eventos na ordem (movimentos seguidos viram um só)", busca.json?.continuar === true && JSON.stringify((busca.json?.eventos ?? []).map((e: { t: string }) => e.t)) === JSON.stringify(["m", "b", "b", "k", "k", "txt"]));
+  const t0Espera = Date.now();
+  const [espera] = await Promise.all([
+    anon.req("POST", "/api/agente/tela/controle", { acaoId: pre.id }, agenteH),
+    new Promise((r) => setTimeout(r, 300)).then(() => ctl({ eventos: [{ t: "k", c: "Enter", d: true }] })),
+  ]);
+  confere("espera longa: o evento chega na hora em que o Líder manda", espera.json?.eventos?.[0]?.c === "Enter" && Date.now() - t0Espera < 3000, `${Date.now() - t0Espera} ms`);
+  confere("Líder devolve o controle", (await ctl({ acao: "soltar" })).status === 200);
+  confere("agente vê que o controle acabou", (await anon.req("POST", "/api/agente/tela/controle", { acaoId: pre.id }, agenteH)).json?.continuar === false);
+  confere("depois de devolver, eventos → 409 (a tela continua)", (await ctl({ eventos: [{ t: "k", c: "KeyB", d: true }] })).status === 409 && (await quadroAg()).json?.continuar === true);
+  const audCtl = ((await lider.get("/api/auditoria?entidade=dispositivo")).json?.registros ?? []).map((r: { acao: string }) => r.acao);
+  confere("auditoria: pedido, permissão e devolução (sem gravar teclas)", ["dispositivo.controle_pedido", "dispositivo.controle_autorizado", "dispositivo.controle_encerrado"].every((x) => audCtl.includes(x)));
   await lider.post(`/api/dispositivos/${agId}/tela/encerrar`);
   confere("Líder encerra o atendimento", (await lider.post(`/api/chamados/${chId}/resolver`)).status === 200);
   const cka3 = await checkin();
