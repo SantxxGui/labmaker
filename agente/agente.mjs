@@ -28,7 +28,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const VERSAO = "4.8.0";
+const VERSAO = "4.9.0";
 const ARQ_CONFIG = path.join(os.homedir(), ".labmaker-agente.json");
 const PASTA_DOWNLOADS = path.join(os.homedir(), "Downloads");
 const QUARENTENA = path.join(os.homedir(), ".labmaker-quarentena");
@@ -309,20 +309,22 @@ async function executar(a) {
 // ───────────────────────── suporte remoto: tela ─────────────────────────
 
 /** Janela nativa "Permitir / Recusar". true/false = resposta; null = sem interface gráfica (cai no terminal). */
-async function dialogoPermissao(motivo) {
-  const texto = `O Líder do espaço maker quer VER sua tela (sem controlar mouse ou teclado).\n\nMotivo: ${aspas(motivo)}\n\nA sessão dura no máximo 10 minutos e você pode encerrar quando quiser.`;
+async function dialogoPermissao(motivo, textoProprio = null, titulo = "LabMaker · suporte remoto") {
+  const texto = textoProprio
+    ? textoProprio.replace(/["`$\\]/g, " ")
+    : `O Líder do espaço maker quer VER sua tela (sem controlar mouse ou teclado).\n\nMotivo: ${aspas(motivo)}\n\nA sessão dura no máximo 30 minutos e você pode encerrar quando quiser.`;
   if (PLATAFORMA === "win32") {
     const r = await rodarBruto("powershell.exe", ["-NoProfile", "-Command",
-      `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show("${texto.replace(/\n/g, "`n")}", "LabMaker · suporte remoto", "YesNo", "Question", "Button2", "DefaultDesktopOnly")`], 60_000);
+      `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show("${texto.replace(/\n/g, "`n")}", "${titulo}", "YesNo", "Question", "Button2", "DefaultDesktopOnly")`], 60_000);
     if (r.faltando) return null;
     return String(r.saida).trim() === "Yes";
   }
   if (PLATAFORMA === "darwin") {
-    const r = await rodarBruto("osascript", ["-e", `display dialog "${texto.replace(/"/g, "'")}" with title "LabMaker · suporte remoto" buttons {"Recusar", "Permitir"} default button "Recusar" giving up after 60`], 65_000);
+    const r = await rodarBruto("osascript", ["-e", `display dialog "${texto.replace(/"/g, "'")}" with title "${titulo}" buttons {"Recusar", "Permitir"} default button "Recusar" giving up after 60`], 65_000);
     if (r.faltando) return null;
     return /button returned:Permitir/.test(String(r.saida)) && !/gave up:true/.test(String(r.saida));
   }
-  const r = await rodarBruto("zenity", ["--question", "--title=LabMaker · suporte remoto", `--text=${texto}`, "--ok-label=Permitir", "--cancel-label=Recusar", "--timeout=60", "--width=420"], 65_000);
+  const r = await rodarBruto("zenity", ["--question", `--title=${titulo}`, `--text=${texto}`, "--ok-label=Permitir", "--cancel-label=Recusar", "--timeout=60", "--width=420"], 65_000);
   if (r.faltando || (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)) return null;
   return r.ok;
 }
@@ -375,25 +377,29 @@ $ms = New-Object System.IO.MemoryStream; $p.Save($ms, $enc, $par); [Convert]::To
   return null;
 }
 
-let transmitindo = null; // { acaoId, parar }
+let transmitindo = null; // { acaoId, parar, aviso, aoEnter, controlador, perguntando }
 
-/** Envia ~1 quadro por segundo enquanto o servidor responder { continuar: true }. */
+/**
+ * Envia a tela enquanto o servidor responder { continuar: true }: ~1 quadro/s só vendo, ~4/s com o
+ * controle remoto ativo. Se o Líder pedir o controle, pergunta ao usuário (segundo consentimento).
+ */
 async function transmitirTela(acaoId) {
   const cfg = lerConfig();
   if (!cfg?.token || transmitindo) return;
-  transmitindo = { acaoId, parar: false };
-  await notificar("Sua tela está sendo compartilhada", "O Líder do espaço está vendo sua tela. Ele não controla mouse nem teclado.");
-  caixa("● Compartilhando sua tela com o Líder do espaço", ["Só visualização: ninguém mexe no seu mouse ou teclado.", "Pressione ENTER aqui para encerrar a qualquer momento."], cor.vermelho);
-  const aoEnter = () => { if (transmitindo) transmitindo.parar = true; };
-  process.stdin.once("data", aoEnter);
+  const t = (transmitindo = { acaoId, parar: false, aviso: null, aoEnter: null, controlador: null, perguntando: false });
+  await notificar("Sua tela está sendo compartilhada", "O Líder do espaço está vendo sua tela. Ele não controla mouse nem teclado sem você permitir.");
+  caixa("● Compartilhando sua tela com o Líder do espaço", ["Só visualização: ninguém mexe no seu mouse ou teclado sem você permitir.", "Pressione ENTER aqui para encerrar a qualquer momento."], cor.vermelho);
+  t.aoEnter = () => { t.parar = true; };
+  process.stdin.once("data", t.aoEnter);
   if (process.stdin.isPaused()) process.stdin.resume();
   // Janela fixa "sua tela está sendo vista" com o botão Parar — o usuário sempre sabe e sempre pode parar
-  const aviso = janelaCompartilhando(() => { if (transmitindo) transmitindo.parar = true; });
+  t.aviso = janelaCompartilhando(() => { t.parar = true; });
 
-  let quadros = 0, iguais = 0, falhas = 0, motivoFim = "", anterior = "";
-  while (!transmitindo.parar) {
+  let quadros = 0, iguais = 0, falhas = 0, motivoFim = "", anterior = "", intervalo = 1000;
+  while (!t.parar) {
     const t0 = Date.now();
-    const q = await capturarTela();
+    // com o controle ativo no Windows, o ajudante captura mais rápido e com o cursor
+    const q = (t.controlador?.capturar && (await t.controlador.capturar())) || (await capturarTela());
     if (!q) {
       motivoFim = "Não foi possível capturar a tela neste sistema (veja docs/DEMO-VM-CELULAR.md).";
       break;
@@ -405,50 +411,413 @@ async function transmitirTela(acaoId) {
       if (mesmo) iguais++; else { anterior = q.imagem; quadros++; }
       falhas = 0;
       if (!r.continuar) { motivoFim = r.motivo ?? "Sessão encerrada pelo Líder."; break; }
+      intervalo = r.intervaloMs ?? 1000;
+      if (r.controle === "pedido" && !t.perguntando && !t.controlador) void perguntarControle(t, r.controlePor);
+      if (r.controle !== "ativo" && t.controlador && !t.perguntando) void pararControle(t, "O Líder devolveu o controle.");
     } catch (e) {
       if (++falhas >= 10) { motivoFim = `Servidor indisponível: ${e.message}`; break; }
     }
-    await new Promise((res) => setTimeout(res, Math.max(150, 1000 - (Date.now() - t0))));
+    await new Promise((res) => setTimeout(res, Math.max(80, intervalo - (Date.now() - t0))));
   }
-  if (transmitindo.parar) {
+  if (t.parar) {
     motivoFim = "Você encerrou o compartilhamento.";
     await api(cfg.servidor, "/api/agente/tela", { acaoId, fim: true }, cfg.token).catch(() => {});
   }
-  process.stdin.off("data", aoEnter);
+  await pararControle(t, null);
+  process.stdin.off("data", t.aoEnter);
   process.stdin.pause();
-  aviso.fechar();
+  t.aviso?.fechar();
   transmitindo = null;
   log(cor.verde, `■ Compartilhamento de tela encerrado (${quadros} quadros enviados, ${iguais} sem mudança). ${motivoFim}`);
   await notificar("Compartilhamento encerrado", motivoFim);
+}
+
+// ───────────────────────── controle remoto (mouse e teclado) ─────────────────────────
+// Só com a tela já compartilhada E um segundo "Permitir" do usuário. Windows: um PowerShell
+// ajudante que fica aberto durante o controle (C# + SendInput; também captura a tela mais rápido e
+// com o cursor). Linux: xdotool (sessão X11). macOS: indisponível (precisa de permissão de
+// Acessibilidade dada à mão) — o Líder vê "indisponível" e segue só vendo.
+
+/** KeyboardEvent.code → [scan code, tecla estendida]. Tecla física: com o mesmo layout (ABNT2) dos dois lados, sai igual. */
+const SCANCODES = {
+  Escape: [0x01], Digit1: [0x02], Digit2: [0x03], Digit3: [0x04], Digit4: [0x05], Digit5: [0x06], Digit6: [0x07], Digit7: [0x08], Digit8: [0x09], Digit9: [0x0a], Digit0: [0x0b],
+  Minus: [0x0c], Equal: [0x0d], Backspace: [0x0e], Tab: [0x0f],
+  KeyQ: [0x10], KeyW: [0x11], KeyE: [0x12], KeyR: [0x13], KeyT: [0x14], KeyY: [0x15], KeyU: [0x16], KeyI: [0x17], KeyO: [0x18], KeyP: [0x19],
+  BracketLeft: [0x1a], BracketRight: [0x1b], Enter: [0x1c], ControlLeft: [0x1d],
+  KeyA: [0x1e], KeyS: [0x1f], KeyD: [0x20], KeyF: [0x21], KeyG: [0x22], KeyH: [0x23], KeyJ: [0x24], KeyK: [0x25], KeyL: [0x26],
+  Semicolon: [0x27], Quote: [0x28], Backquote: [0x29], ShiftLeft: [0x2a], Backslash: [0x2b],
+  KeyZ: [0x2c], KeyX: [0x2d], KeyC: [0x2e], KeyV: [0x2f], KeyB: [0x30], KeyN: [0x31], KeyM: [0x32],
+  Comma: [0x33], Period: [0x34], Slash: [0x35], ShiftRight: [0x36], NumpadMultiply: [0x37], AltLeft: [0x38], Space: [0x39], CapsLock: [0x3a],
+  F1: [0x3b], F2: [0x3c], F3: [0x3d], F4: [0x3e], F5: [0x3f], F6: [0x40], F7: [0x41], F8: [0x42], F9: [0x43], F10: [0x44],
+  NumLock: [0x45], ScrollLock: [0x46], Numpad7: [0x47], Numpad8: [0x48], Numpad9: [0x49], NumpadSubtract: [0x4a],
+  Numpad4: [0x4b], Numpad5: [0x4c], Numpad6: [0x4d], NumpadAdd: [0x4e], Numpad1: [0x4f], Numpad2: [0x50], Numpad3: [0x51], Numpad0: [0x52], NumpadDecimal: [0x53],
+  IntlBackslash: [0x56], F11: [0x57], F12: [0x58], IntlRo: [0x73], NumpadComma: [0x7e],
+  NumpadEnter: [0x1c, 1], ControlRight: [0x1d, 1], NumpadDivide: [0x35, 1], PrintScreen: [0x37, 1], AltRight: [0x38, 1],
+  Home: [0x47, 1], ArrowUp: [0x48, 1], PageUp: [0x49, 1], ArrowLeft: [0x4b, 1], ArrowRight: [0x4d, 1], End: [0x4f, 1], ArrowDown: [0x50, 1], PageDown: [0x51, 1],
+  Insert: [0x52, 1], Delete: [0x53, 1], MetaLeft: [0x5b, 1], MetaRight: [0x5c, 1], ContextMenu: [0x5d, 1],
+};
+
+/** KeyboardEvent.code → keysym do X11 (xdotool). */
+const KEYSYMS = (() => {
+  const m = {
+    Escape: "Escape", Minus: "minus", Equal: "equal", Backspace: "BackSpace", Tab: "Tab", BracketLeft: "bracketleft", BracketRight: "bracketright",
+    Enter: "Return", ControlLeft: "Control_L", ControlRight: "Control_R", Semicolon: "semicolon", Quote: "apostrophe", Backquote: "grave",
+    ShiftLeft: "Shift_L", ShiftRight: "Shift_R", Backslash: "backslash", Comma: "comma", Period: "period", Slash: "slash", AltLeft: "Alt_L", AltRight: "ISO_Level3_Shift",
+    Space: "space", CapsLock: "Caps_Lock", NumLock: "Num_Lock", ScrollLock: "Scroll_Lock", NumpadMultiply: "KP_Multiply", NumpadSubtract: "KP_Subtract",
+    NumpadAdd: "KP_Add", NumpadDecimal: "KP_Decimal", NumpadEnter: "KP_Enter", NumpadDivide: "KP_Divide", NumpadComma: "KP_Separator", IntlBackslash: "less", IntlRo: "slash",
+    PrintScreen: "Print", Home: "Home", End: "End", PageUp: "Prior", PageDown: "Next", Insert: "Insert", Delete: "Delete",
+    ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right", MetaLeft: "Super_L", MetaRight: "Super_R", ContextMenu: "Menu",
+  };
+  for (let i = 0; i < 26; i++) m[`Key${String.fromCharCode(65 + i)}`] = String.fromCharCode(97 + i);
+  for (let i = 0; i <= 9; i++) { m[`Digit${i}`] = String(i); m[`Numpad${i}`] = `KP_${i}`; }
+  for (let i = 1; i <= 12; i++) m[`F${i}`] = `F${i}`;
+  return m;
+})();
+
+/** O evento veio do servidor, mas é a fronteira do computador do aluno: confere tudo antes de usar. */
+function eventoValido(e) {
+  const c01 = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
+  if (!e || typeof e !== "object") return false;
+  if (e.t === "m") return c01(e.x) && c01(e.y);
+  if (e.t === "b") return [0, 1, 2].includes(e.b) && typeof e.d === "boolean" && c01(e.x) && c01(e.y);
+  if (e.t === "w") return Number.isInteger(e.dy) && e.dy !== 0 && Math.abs(e.dy) <= 20 && c01(e.x) && c01(e.y);
+  if (e.t === "k") return typeof e.c === "string" && Object.hasOwn(SCANCODES, e.c) && typeof e.d === "boolean";
+  if (e.t === "txt") return typeof e.s === "string" && e.s.length > 0 && e.s.length <= 2000;
+  return false;
+}
+
+// Ajudante do Windows: compilado uma vez quando o controle começa (~2 s) e fica lendo comandos.
+const AJUDANTE_WINDOWS = `$ErrorActionPreference = 'Stop'
+try {
+Add-Type -ReferencedAssemblies System.Drawing, System.Windows.Forms -TypeDefinition @'
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Windows.Forms;
+
+public static class LabMakerControle {
+  [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Explicit)] struct ENTRADA { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; }
+  [StructLayout(LayoutKind.Sequential)] struct INPUT { public uint type; public ENTRADA u; }
+  [StructLayout(LayoutKind.Sequential)] struct CURSORINFO { public int cbSize; public int flags; public IntPtr hCursor; public int x; public int y; }
+
+  [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint n, INPUT[] entradas, int tamanho);
+  [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] static extern bool GetCursorInfo(ref CURSORINFO ci);
+  [DllImport("user32.dll")] static extern bool DrawIcon(IntPtr hdc, int x, int y, IntPtr icone);
+
+  const uint MOVE = 0x0001, ESQ_DESCE = 0x0002, ESQ_SOBE = 0x0004, DIR_DESCE = 0x0008, DIR_SOBE = 0x0010;
+  const uint MEIO_DESCE = 0x0020, MEIO_SOBE = 0x0040, RODA = 0x0800, VIRTUALDESK = 0x4000, ABSOLUTO = 0x8000;
+  const uint EXTENDIDA = 0x0001, SOBE = 0x0002, UNICODE = 0x0004, SCANCODE = 0x0008;
+  static ImageCodecInfo jpeg;
+
+  /* Tela em pixels reais (sem isso, com escala de 125/150% a captura sai cortada). */
+  public static void Iniciar() { SetProcessDPIAware(); }
+
+  static void Enviar(INPUT[] e) { SendInput((uint)e.Length, e, Marshal.SizeOf(typeof(INPUT))); }
+  static INPUT Mouse(int dx, int dy, uint dados, uint flags) { INPUT i = new INPUT(); i.type = 0; i.u.mi.dx = dx; i.u.mi.dy = dy; i.u.mi.mouseData = dados; i.u.mi.dwFlags = flags; return i; }
+  static INPUT Tecla(ushort vk, ushort scan, uint flags) { INPUT i = new INPUT(); i.type = 1; i.u.ki.wVk = vk; i.u.ki.wScan = scan; i.u.ki.dwFlags = flags; return i; }
+
+  /* mv X Y (0..65535 sobre a área de trabalho inteira) | bt BOTAO 1/0 | wh DELTA | ky SCAN EXT 1/0 | tx BASE64 | cap LARGURA QUALIDADE */
+  public static string Executar(string linha) {
+    string[] p = linha.Split(' ');
+    switch (p[0]) {
+      case "mv":
+        Enviar(new INPUT[] { Mouse(int.Parse(p[1]), int.Parse(p[2]), 0, MOVE | ABSOLUTO | VIRTUALDESK) });
+        return null;
+      case "bt": {
+        int b = int.Parse(p[1]); bool desce = p[2] == "1";
+        uint f = b == 0 ? (desce ? ESQ_DESCE : ESQ_SOBE) : b == 1 ? (desce ? MEIO_DESCE : MEIO_SOBE) : (desce ? DIR_DESCE : DIR_SOBE);
+        Enviar(new INPUT[] { Mouse(0, 0, 0, f) });
+        return null;
+      }
+      case "wh":
+        Enviar(new INPUT[] { Mouse(0, 0, unchecked((uint)int.Parse(p[1])), RODA) });
+        return null;
+      case "ky": {
+        uint f = SCANCODE | (p[2] == "1" ? EXTENDIDA : 0) | (p[3] == "1" ? 0 : SOBE);
+        Enviar(new INPUT[] { Tecla(0, (ushort)int.Parse(p[1]), f) });
+        return null;
+      }
+      case "tx": {
+        string t = Encoding.UTF8.GetString(Convert.FromBase64String(p[1]));
+        foreach (char c in t) {
+          if (c == '\\r') continue;
+          if (c == '\\n') { Enviar(new INPUT[] { Tecla(0x0D, 0, 0), Tecla(0x0D, 0, SOBE) }); continue; }
+          Enviar(new INPUT[] { Tecla(0, c, UNICODE), Tecla(0, c, UNICODE | SOBE) });
+        }
+        return null;
+      }
+      case "cap":
+        return "cap " + Capturar(int.Parse(p[1]), long.Parse(p[2]));
+    }
+    return null;
+  }
+
+  static string Capturar(int largura, long qualidade) {
+    Rectangle b = SystemInformation.VirtualScreen;
+    using (Bitmap img = new Bitmap(b.Width, b.Height)) {
+      using (Graphics g = Graphics.FromImage(img)) {
+        g.CopyFromScreen(b.Left, b.Top, 0, 0, img.Size);
+        CURSORINFO ci = new CURSORINFO(); ci.cbSize = Marshal.SizeOf(typeof(CURSORINFO));
+        if (GetCursorInfo(ref ci) && ci.flags == 1) { IntPtr hdc = g.GetHdc(); DrawIcon(hdc, ci.x - b.Left, ci.y - b.Top, ci.hCursor); g.ReleaseHdc(hdc); }
+      }
+      int w = Math.Min(largura, b.Width); int h = (int)((long)b.Height * w / b.Width);
+      using (Bitmap menor = new Bitmap(w, h)) {
+        using (Graphics g2 = Graphics.FromImage(menor)) {
+          g2.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+          g2.DrawImage(img, 0, 0, w, h);
+        }
+        if (jpeg == null) foreach (ImageCodecInfo c in ImageCodecInfo.GetImageEncoders()) if (c.MimeType == "image/jpeg") jpeg = c;
+        EncoderParameters par = new EncoderParameters(1);
+        par.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, qualidade);
+        using (MemoryStream ms = new MemoryStream()) { menor.Save(ms, jpeg, par); return Convert.ToBase64String(ms.ToArray()); }
+      }
+    }
+  }
+}
+'@
+[LabMakerControle]::Iniciar()
+} catch { [Console]::Out.WriteLine('falhou ' + $_.Exception.Message); exit 1 }
+[Console]::Out.WriteLine('pronto')
+while ($true) {
+  $l = [Console]::In.ReadLine()
+  if ($null -eq $l -or $l -eq 'sair') { break }
+  try { $r = [LabMakerControle]::Executar($l); if ($r) { [Console]::Out.WriteLine($r) } }
+  catch { [Console]::Out.WriteLine('erro ' + $l.Split(' ')[0] + ' ' + $_.Exception.Message) }
+}
+`;
+
+/** Eventos → comandos do ajudante do Windows. */
+function linhasWindows(eventos) {
+  const pos = (e) => `mv ${Math.round(e.x * 65535)} ${Math.round(e.y * 65535)}`;
+  const out = [];
+  for (const e of eventos) {
+    if (e.t === "m") out.push(pos(e));
+    else if (e.t === "b") out.push(pos(e), `bt ${e.b} ${e.d ? 1 : 0}`);
+    else if (e.t === "w") out.push(pos(e), `wh ${-e.dy * 120}`); // no navegador + é para baixo; no Windows + é para cima
+    else if (e.t === "k") { const [scan, ext] = SCANCODES[e.c]; out.push(`ky ${scan} ${ext ? 1 : 0} ${e.d ? 1 : 0}`); }
+    else if (e.t === "txt") out.push(`tx ${Buffer.from(e.s, "utf8").toString("base64")}`);
+  }
+  return out;
+}
+
+/** Eventos → argumentos do xdotool (um processo por lote; "type" vai à parte). */
+function lotesXdotool(eventos, largura, altura) {
+  const lotes = [];
+  let atual = [];
+  const xy = (e) => [String(Math.round(e.x * (largura - 1))), String(Math.round(e.y * (altura - 1)))];
+  for (const e of eventos) {
+    if (e.t === "m") atual.push("mousemove", ...xy(e));
+    else if (e.t === "b") atual.push("mousemove", ...xy(e), e.d ? "mousedown" : "mouseup", String([1, 2, 3][e.b]));
+    else if (e.t === "w") atual.push("mousemove", ...xy(e), "click", "--repeat", String(Math.abs(e.dy)), e.dy > 0 ? "5" : "4");
+    else if (e.t === "k") { if (KEYSYMS[e.c]) atual.push(e.d ? "keydown" : "keyup", KEYSYMS[e.c]); }
+    else if (e.t === "txt") { if (atual.length) lotes.push(atual); lotes.push(["type", "--delay", "8", "--", e.s]); atual = []; }
+  }
+  if (atual.length) lotes.push(atual);
+  return lotes;
+}
+
+async function controladorWindows() {
+  const filho = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", Buffer.from(AJUDANTE_WINDOWS, "utf16le").toString("base64")], { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
+  let vivo = true, esperaCaptura = null, aoIniciar = null;
+  filho.on("error", () => { vivo = false; aoIniciar?.(false); });
+  filho.on("exit", () => { vivo = false; aoIniciar?.(false); esperaCaptura?.(null); });
+  createInterface({ input: filho.stdout }).on("line", (l) => {
+    if (aoIniciar) { if (l === "pronto") aoIniciar(true); else if (l.startsWith("falhou")) { log(cor.amarelo, `controle remoto: ${l}`); aoIniciar(false); } return; }
+    if (esperaCaptura && (l.startsWith("cap ") || l.startsWith("erro cap"))) esperaCaptura(l.startsWith("cap ") ? l.slice(4) : null);
+  });
+  const ok = await new Promise((resolve) => {
+    const t = setTimeout(() => resolve(false), 30_000);
+    aoIniciar = (v) => { clearTimeout(t); aoIniciar = null; resolve(v); };
+  });
+  if (!ok) { try { filho.kill(); } catch { /* já saiu */ } return null; }
+  const escrever = (l) => { if (vivo) filho.stdin.write(`${l}\n`); };
+  return {
+    capturar: () => new Promise((resolve) => {
+      if (!vivo || esperaCaptura) return resolve(null);
+      const t = setTimeout(() => { esperaCaptura = null; resolve(null); }, 5000);
+      esperaCaptura = (b64) => { clearTimeout(t); esperaCaptura = null; resolve(b64 ? { imagem: b64, tipo: "image/jpeg" } : null); };
+      escrever("cap 1280 50");
+    }),
+    aplicar: async (eventos) => { for (const l of linhasWindows(eventos)) escrever(l); },
+    fechar: () => { escrever("sair"); setTimeout(() => { try { filho.kill(); } catch { /* já saiu */ } }, 1500); },
+  };
+}
+
+async function controladorLinux() {
+  if (!process.env.DISPLAY || !noPath("xdotool")) return null; // Wayland/sem X: o xdotool não controla
+  const g = await rodarBruto("xdotool", ["getdisplaygeometry"], 4000);
+  const [largura, altura] = String(g.saida).trim().split(/\s+/).map(Number);
+  if (!g.ok || !(largura > 0 && altura > 0)) return null;
+  return {
+    aplicar: async (eventos) => { for (const a of lotesXdotool(eventos, largura, altura)) await rodarBruto("xdotool", a, a[0] === "type" ? 60_000 : 5000); },
+    fechar: () => {},
+  };
+}
+
+/** Controle do sistema + memória do que está apertado (ao terminar, nada fica preso). */
+async function criarControlador() {
+  const base = PLATAFORMA === "win32" ? await controladorWindows() : PLATAFORMA === "linux" ? await controladorLinux() : null;
+  if (!base) return null;
+  const teclas = new Set(), botoes = new Set();
+  let ultimo = { x: 0.5, y: 0.5 };
+  return {
+    capturar: base.capturar,
+    async aplicar(eventos) {
+      const validos = (Array.isArray(eventos) ? eventos : []).filter(eventoValido);
+      for (const e of validos) {
+        if (e.t === "k") { if (e.d) teclas.add(e.c); else teclas.delete(e.c); }
+        if (e.t === "b") { if (e.d) botoes.add(e.b); else botoes.delete(e.b); }
+        if ("x" in e) ultimo = { x: e.x, y: e.y };
+      }
+      if (validos.length) await base.aplicar(validos);
+    },
+    async fechar() {
+      const soltar = [...[...teclas].map((c) => ({ t: "k", c, d: false })), ...[...botoes].map((b) => ({ t: "b", b, d: false, ...ultimo }))];
+      teclas.clear(); botoes.clear();
+      if (soltar.length) await base.aplicar(soltar).catch(() => {});
+      base.fechar();
+    },
+  };
+}
+
+/** O Líder pediu o controle: pergunta ao usuário e, se ele permitir, liga o controle. */
+async function perguntarControle(t, por) {
+  t.perguntando = true;
+  const cfg = lerConfig();
+  const quem = por ? por.split(" ")[0] : "O Líder do espaço";
+  try {
+    await notificar("Pedido de controle remoto", `${quem} quer controlar seu mouse e teclado para ajudar.`);
+    caixa("Pedido de controle remoto", [`${quem} quer CONTROLAR seu mouse e teclado.`, "Responda na janela que abriu (ou aqui no terminal)."], cor.azul);
+    const texto = `${quem} (Líder do espaço maker) quer CONTROLAR seu mouse e teclado para resolver o problema.\n\n` +
+      "Você continua vendo tudo o que ele faz e pode parar a qualquer momento no botão Parar.\n\nPermitir?";
+    let ok = await dialogoPermissao(null, texto, "LabMaker · controle remoto");
+    if (ok === null) {
+      // sem janela gráfica: pergunta no terminal (o ENTER de "parar" fica de fora enquanto isso)
+      process.stdin.off("data", t.aoEnter);
+      const r = await perguntar("Permitir que o Líder controle seu mouse e teclado? (s/n) ", 60);
+      if (!t.parar) { process.stdin.once("data", t.aoEnter); if (process.stdin.isPaused()) process.stdin.resume(); }
+      ok = r === "s" || r === "sim";
+    }
+    if (t.parar) return;
+    let controlador = null;
+    if (ok) {
+      log(cor.cinza, "preparando o controle remoto…");
+      controlador = await criarControlador().catch(() => null);
+      if (!controlador) log(cor.amarelo, "Este sistema não deixa controlar o mouse e o teclado (no Linux precisa de X11 + xdotool; no macOS, indisponível).");
+    }
+    const resposta = !ok ? "recusado" : controlador ? "aceito" : "indisponivel";
+    const r = await api(cfg.servidor, "/api/agente/tela", { acaoId: t.acaoId, controle: resposta }, cfg.token).catch(() => null);
+    if (resposta === "aceito" && r?.controle === "ativo" && !t.parar) {
+      t.controlador = controlador;
+      t.aviso?.fechar();
+      t.aviso = janelaCompartilhando(() => { t.parar = true; }, `● ${quem} está CONTROLANDO seu computador (mouse e teclado). Clique em Parar para encerrar na hora.`);
+      caixa("● Controle remoto ativo", [`${quem} está controlando seu mouse e teclado.`, "Pressione ENTER aqui (ou Parar na janela) para encerrar."], cor.vermelho);
+      await notificar("Controle remoto ativo", `${quem} está controlando seu computador. Clique em Parar para encerrar.`);
+      void lacoControle(t);
+    } else {
+      await controlador?.fechar();
+      log(cor.cinza, resposta === "recusado" ? "Controle remoto recusado." : "Controle remoto indisponível neste sistema.");
+    }
+  } finally {
+    t.perguntando = false;
+  }
+}
+
+/** Busca os eventos do Líder (espera longa) e aplica, até o controle acabar. */
+async function lacoControle(t) {
+  const cfg = lerConfig();
+  let falhas = 0, aplicados = 0;
+  while (t.controlador && !t.parar) {
+    let r;
+    try {
+      r = await api(cfg.servidor, "/api/agente/tela/controle", { acaoId: t.acaoId }, cfg.token, 30_000);
+      falhas = 0;
+    } catch {
+      if (++falhas >= 5) break;
+      await new Promise((res) => setTimeout(res, 1000));
+      continue;
+    }
+    if (t.parar || !t.controlador) break;
+    if (r.eventos?.length) {
+      await t.controlador.aplicar(r.eventos).catch((e) => log(cor.amarelo, `controle remoto: ${e.message}`));
+      aplicados += r.eventos.length;
+    }
+    if (!r.continuar) break;
+  }
+  if (t.controlador && !t.parar) await pararControle(t, "O Líder devolveu o controle.");
+  log(cor.cinza, `controle remoto: ${aplicados} eventos aplicados`);
+}
+
+async function pararControle(t, motivo) {
+  const c = t.controlador;
+  if (!c) return;
+  t.controlador = null;
+  await c.fechar().catch(() => {});
+  if (motivo && !t.parar) {
+    // a tela continua compartilhada: volta o aviso de "só vendo"
+    t.aviso?.fechar();
+    t.aviso = janelaCompartilhando(() => { t.parar = true; });
+    log(cor.verde, `■ Controle remoto encerrado: ${motivo} A tela continua compartilhada.`);
+    await notificar("Controle remoto encerrado", `${motivo} Ele continua vendo sua tela até encerrar.`);
+  }
 }
 
 /**
  * Janela pequena e fixa enquanto a tela é compartilhada, com o botão "Parar de compartilhar".
  * Fecha sozinha quando a sessão acaba. Retorna { fechar }.
  */
-function janelaCompartilhando(aoParar) {
-  const texto = "● Sua tela está sendo vista pelo Líder do espaço. Só visualização: ninguém mexe no seu mouse ou teclado.";
+function janelaCompartilhando(aoParar, texto = "● Sua tela está sendo vista pelo Líder do espaço. Só visualização: ninguém mexe no seu mouse ou teclado.") {
+  texto = texto.replace(/['"`$]/g, " ");
   let filho = null;
   let fechadoPorNos = false;
   try {
     if (PLATAFORMA === "win32") {
       filho = spawn("powershell.exe", ["-NoProfile", "-Command", `
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-$f = New-Object System.Windows.Forms.Form
+Add-Type -ReferencedAssemblies System.Windows.Forms, System.Drawing -TypeDefinition @'
+public class AvisoLabMaker : System.Windows.Forms.Form {
+  /* Nunca rouba o foco do teclado (WS_EX_NOACTIVATE): quem está digitando - o aluno ou o Líder no
+     controle remoto - continua na janela certa, e Enter/Espaço não apertam o Parar sem querer.
+     O botão Parar funciona normalmente com o mouse. */
+  protected override bool ShowWithoutActivation { get { return true; } }
+  protected override System.Windows.Forms.CreateParams CreateParams {
+    get { System.Windows.Forms.CreateParams cp = base.CreateParams; cp.ExStyle |= 0x08000000 | 0x00000008; return cp; }
+  }
+}
+'@
+$f = New-Object AvisoLabMaker
 $f.Text = 'LabMaker · suporte remoto'; $f.TopMost = $true; $f.Width = 400; $f.Height = 140
 $f.FormBorderStyle = 'FixedToolWindow'; $f.StartPosition = 'Manual'
 $f.Location = New-Object System.Drawing.Point(([System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Width - 420), 20)
 $l = New-Object System.Windows.Forms.Label; $l.Text = '${texto}'; $l.Width = 370; $l.Height = 40; $l.Left = 12; $l.Top = 10; $l.ForeColor = 'DarkRed'
 $b = New-Object System.Windows.Forms.Button; $b.Text = 'Parar de compartilhar'; $b.Width = 180; $b.Height = 30; $b.Left = 12; $b.Top = 56
 $b.Add_Click({ [Console]::Out.Write('parar'); $f.Close() })
-$f.Controls.Add($l); $f.Controls.Add($b); [void]$f.ShowDialog()`], { windowsHide: true });
+$f.Controls.Add($l); $f.Controls.Add($b); [System.Windows.Forms.Application]::Run($f)`], { windowsHide: true });
     } else if (PLATAFORMA === "darwin") {
       filho = spawn("osascript", ["-e", `display dialog "${texto}" with title "LabMaker · suporte remoto" buttons {"Parar de compartilhar"} default button 1 giving up after 600`]);
     } else if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY) {
-      filho = spawn("zenity", ["--info", "--title=LabMaker · suporte remoto", `--text=${texto}`, "--ok-label=Parar de compartilhar", "--width=380", "--no-wrap"], { env: AMBIENTE });
+      // O zenity pega o foco ao abrir: com xdotool, devolve o foco para a janela em que a pessoa (ou
+      // o Líder no controle remoto) estava — senão o próximo Enter apertaria "Parar" sem querer.
+      void (async () => {
+        const a = process.env.DISPLAY && noPath("xdotool") ? await rodarBruto("xdotool", ["getactivewindow"], 2000) : null;
+        const anterior = a?.ok ? String(a.saida).trim() : "";
+        if (fechadoPorNos) return;
+        try {
+          filho = spawn("zenity", ["--info", "--title=LabMaker · suporte remoto", `--text=${texto}`, "--ok-label=Parar de compartilhar", "--width=380", "--no-wrap"], { env: AMBIENTE });
+          ligar(filho);
+          if (/^\d+$/.test(anterior)) setTimeout(() => void rodarBruto("xdotool", ["windowactivate", anterior], 3000), 900);
+        } catch { filho = null; }
+      })();
     }
   } catch { filho = null; }
-  if (filho) {
+  if (filho) ligar(filho);
+  function ligar(filho) {
     let saida = "", falhou = false;
     filho.stdout?.on("data", (d) => { saida += d; });
     filho.on("error", () => { falhou = true; }); // sem zenity: fica só o ENTER no terminal

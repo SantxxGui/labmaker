@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  APP_AGENTE, avaliarAcao, avaliarConformidade, avaliarRemocao, nomeRemovido, downloadPermitido, efeitoAcao, estaOnline, lerDispositivo, statusEfetivo, type ContextoAcao,
+  APP_AGENTE, aceitaControle, avaliarAcao, avaliarConformidade, avaliarRemocao, nomeRemovido, downloadPermitido, efeitoAcao, estaOnline, lerDispositivo, statusEfetivo, type ContextoAcao,
 } from "@/lib/agente";
 import { resumirLotes } from "@/lib/dispositivo-dto";
 import type { AcaoDispositivoDTO } from "@/lib/types";
@@ -130,5 +130,15 @@ describe("remover aparelho", () => {
   });
   it("libera o nome com a data da remoção no horário de Brasília", () => {
     expect(nomeRemovido("CEL-ANA", new Date("2026-11-19T12:30:00Z"))).toBe("CEL-ANA (removido 19/11 09:30)");
+  });
+});
+
+describe("controle remoto: quais agentes aceitam", () => {
+  it("só o agente instalado 4.9.0+ em Windows ou Linux", () => {
+    expect(aceitaControle({ agenteVersao: "4.9.0", so: "WINDOWS" })).toBe(true);
+    expect(aceitaControle({ agenteVersao: "4.10.1", so: "LINUX" })).toBe(true);
+    expect(aceitaControle({ agenteVersao: "4.8.0", so: "WINDOWS" })).toBe(false); // agente antigo: só vê a tela
+    expect(aceitaControle({ agenteVersao: "4.9.0", so: "MACOS" })).toBe(false);
+    expect(aceitaControle({ agenteVersao: "web-1.1", so: "WINDOWS" })).toBe(false); // página no navegador
   });
 });

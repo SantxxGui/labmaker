@@ -19,9 +19,12 @@ import { assinarInscricao, assinarJanelaAjuda, verificarInscricao, verificarJane
 import { automacoesDoCheckin } from "@/lib/automacao";
 import { CHECKIN_ATENDIMENTO_S, DESCRICAO_ATALHO, JanelaAjuda } from "@/lib/chamados";
 import { chavesVapid } from "@/lib/push";
-import { INTERVALO_QUADRO_MS, TAMANHO_MAX_BYTES, TelaStore, avaliarQuadro } from "@/lib/tela-remota";
+import {
+  ESPERA_CONTROLE_MS, INTERVALO_QUADRO_CONTROLE_MS, INTERVALO_QUADRO_MS, TAMANHO_MAX_BYTES, TelaStore, avaliarQuadro, controleEventos, estadoSessao,
+  type EventoControle, type SessaoTela,
+} from "@/lib/tela-remota";
 import { ChamadoModel } from "@/models/chamado.model";
-import { agenteChamadoSchema, agenteJanelaEstadoSchema, agenteCheckinSchema, agenteInscreverSchema, agenteMensagemSchema, agentePushSchema, inscricaoSchema, telaQuadroSchema } from "@/lib/validators";
+import { agenteChamadoSchema, agenteControleSchema, agenteJanelaEstadoSchema, agenteCheckinSchema, agenteInscreverSchema, agenteMensagemSchema, agentePushSchema, inscricaoSchema, telaQuadroSchema } from "@/lib/validators";
 import { AgenteModel } from "@/models/agente.model";
 import { ConviteModel, type Convite } from "@/models/convite.model";
 import { TentativaLoginModel } from "@/models/tentativa-login.model";
@@ -54,6 +57,19 @@ async function aparelhoDoChat(req: Request): Promise<{ id: string; hostname: str
   const d = id ? await AgenteModel.porId(id) : null;
   if (!d || !d.ativo) throw new ApiError(401, "Esta janela venceu. Clique de novo em “Pedir ajuda ao Líder”.");
   return d;
+}
+
+/** O que o agente recebe a cada quadro: segue? com que intervalo? o Líder pediu/tem o controle? */
+function respostaQuadro(s: SessaoTela | undefined) {
+  return json(
+    {
+      continuar: true,
+      intervaloMs: s?.controle === "ativo" ? INTERVALO_QUADRO_CONTROLE_MS : INTERVALO_QUADRO_MS,
+      controle: s?.controle ?? "nenhum",
+      controlePor: s?.controlePor ?? null,
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 /** Endereço público deste servidor, como o navegador do Líder o vê (Render: https://….onrender.com). */
@@ -240,6 +256,21 @@ export const AgenteController = {
       return json({ continuar: false });
     }
 
+    // resposta do usuário ao pedido de controle remoto
+    if (q.controle) {
+      if (!sessao || sessao.acaoId !== q.acaoId || !estadoSessao(sessao).ativa) return json({ continuar: false });
+      if (sessao.controle === "pedido") {
+        TelaStore.responderControle(d.id, q.controle);
+        await AuditoriaModel.registrar({
+          autor: null, acao: q.controle === "aceito" ? "dispositivo.controle_autorizado" : "dispositivo.controle_negado", entidade: "dispositivo", entidadeId: d.id, ip: ipDe(req),
+          resumo: q.controle === "aceito"
+            ? `O usuário de ${d.hostname} permitiu que ${sessao.controlePor ?? "o Líder"} controlasse o mouse e o teclado`
+            : q.controle === "recusado" ? `O usuário de ${d.hostname} não permitiu o controle remoto` : `${d.hostname} não permite controle remoto neste sistema`,
+        });
+      }
+      return respostaQuadro(TelaStore.buscar(d.id));
+    }
+
     const regra = avaliarQuadro(await AgenteModel.buscarAcao(d.id, q.acaoId), d.id, sessao);
     if (!regra.ok) {
       if (sessao?.acaoId === q.acaoId && TelaStore.encerrar(d.id, regra.motivo)) {
@@ -253,7 +284,7 @@ export const AgenteController = {
 
     if (q.mesmo && !regra.nova) {
       TelaStore.manterVivo(d.id);
-      return json({ continuar: true, intervaloMs: INTERVALO_QUADRO_MS }, { headers: { "Cache-Control": "no-store" } });
+      return respostaQuadro(TelaStore.buscar(d.id));
     }
     if (!q.imagem) throw new ApiError(422, "O primeiro quadro precisa da imagem.");
     const dados = Buffer.from(q.imagem, "base64");
@@ -266,7 +297,40 @@ export const AgenteController = {
       });
     }
     TelaStore.gravarQuadro(d.id, dados, q.tipo);
-    return json({ continuar: true, intervaloMs: INTERVALO_QUADRO_MS }, { headers: { "Cache-Control": "no-store" } });
+    return respostaQuadro(TelaStore.buscar(d.id));
+  }),
+
+  /**
+   * POST /api/agente/tela/controle — o agente busca os eventos de mouse/teclado do Líder.
+   * Espera longa: responde na hora em que chega evento (ou em 20 s, vazio), e com continuar: false
+   * quando o controle acaba (Líder devolveu, usuário parou, sessão encerrou).
+   */
+  controle: handler(async (req: Request) => {
+    const d = await dispositivoDoToken(req);
+    const { acaoId } = agenteControleSchema.parse(await req.json());
+    const ativo = () => {
+      const s = TelaStore.buscar(d.id);
+      return !!s && s.acaoId === acaoId && estadoSessao(s).ativa && s.controle === "ativo";
+    };
+    if (!ativo()) return json({ continuar: false, eventos: [] });
+    const eventos = await new Promise<EventoControle[]>((resolve) => {
+      let feito = false;
+      const acabar = (abortou = false) => {
+        if (feito) return;
+        feito = true;
+        clearTimeout(t);
+        controleEventos.off(d.id, acordar);
+        req.signal.removeEventListener("abort", aoAbortar);
+        resolve(abortou ? [] : TelaStore.retirarEventos(d.id)); // agente caiu: os eventos ficam para a próxima busca
+      };
+      const acordar = () => acabar();
+      const aoAbortar = () => acabar(true);
+      const t = setTimeout(acordar, ESPERA_CONTROLE_MS);
+      controleEventos.on(d.id, acordar);
+      req.signal.addEventListener("abort", aoAbortar);
+      if ((TelaStore.buscar(d.id)?.fila.length ?? 0) > 0) acordar();
+    });
+    return json({ continuar: ativo(), eventos }, { headers: { "Cache-Control": "no-store" } });
   }),
 
   /** POST /api/agente/chamados — o usuário do aparelho pede ajuda ao Líder */

@@ -13,7 +13,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { APP_AGENTE, CATEGORIAS_SITE, catalogoPara } from "@/lib/agente";
+import { APP_AGENTE, CATEGORIAS_SITE, aceitaControle, catalogoPara } from "@/lib/agente";
 import { ACAO_DISPOSITIVO_LABEL, MODO_DOWNLOAD_LABEL, SO_LABEL, TIPO_DISPOSITIVO_LABEL } from "@/lib/labels";
 import type { AcaoDispositivoDTO, DispositivoPainelDTO, EmprestimoDTO, EventoDispositivoDTO, PoliticaDTO, SeveridadeAlarme, TipoAcaoDispositivo } from "@/lib/types";
 import { cn, formatDataHora, tempoRelativo } from "@/lib/utils";
@@ -183,7 +183,8 @@ export function DispositivoDetalheView(p: Props) {
               </Card>
             ) : d.agenteReal ? (
               <Card className="overflow-hidden p-0">
-                <TelaRemotaAoVivo dispositivoId={d.id} hostname={d.hostname} online={l.online} podeComandar={p.podeComandar} onPedir={() => setPedido({ tipo: "SESSAO_REMOTA" })} />
+                <TelaRemotaAoVivo dispositivoId={d.id} hostname={d.hostname} online={l.online} podeComandar={p.podeComandar}
+                  controlavel={aceitaControle(d)} onPedir={() => setPedido({ tipo: "SESSAO_REMOTA" })} />
               </Card>
             ) : (
             <Card className="overflow-hidden p-0">

@@ -99,11 +99,28 @@ Líder: ação SESSAO_REMOTA (com motivo) ──▶ fila
 Agente: check-in → recebe → janela "Permitir / Recusar" no computador
    Permitir → POST /api/agente/tela { acaoId, imagem } a cada ~1 s → { continuar: true }
 Líder: GET /api/dispositivos/:id/tela (estado) · /tela/imagem (último quadro) · POST /tela/encerrar
-Fim: Líder encerra · usuário aperta ENTER · 10 min · pedido recusado → { continuar: false }
+Fim: Líder encerra · usuário aperta ENTER/Parar · 30 min · pedido recusado → { continuar: false }
+
+Controle (opcional, com a tela já ao vivo):
+Líder: POST /api/dispositivos/:id/tela/controle { acao: "pedir" }
+Agente: vê controle: "pedido" na resposta do quadro → janela "Permitir que o Líder controle seu mouse e teclado?"
+   Permitir → POST /api/agente/tela { acaoId, controle: "aceito" }  (ou "recusado" / "indisponivel")
+Líder: { eventos: [...] } a cada 40 ms (mover, botões, roda, teclas físicas, colar texto)
+Agente: POST /api/agente/tela/controle { acaoId } — espera longa (até 20 s) → aplica os eventos
+Fim do controle: Líder "Devolver controle" · usuário Parar · fim da sessão → solta teclas e botões
 ```
 
-- Regras puras em `lib/tela-remota.ts` (testadas): só com pedido **autorizado** daquele aparelho; pedido vale 30 min; sessão dura no máximo 10 min.
-- **Só visualização**: não existe controle de mouse ou teclado, de propósito (LGPD e segurança).
+- Regras puras em `lib/tela-remota.ts` e `lib/controle-remoto.ts` (testadas): só com pedido **autorizado** daquele aparelho; pedido vale 30 min; sessão dura no máximo **30 min**.
+- **Controle remoto (tipo AnyDesk)** é um **segundo consentimento**: com a tela ao vivo, o Líder clica em **Controlar** e o usuário vê *"Permitir que o Líder controle seu mouse e teclado?"*. Enquanto isso:
+  - a janela fixa troca para **"o Líder está CONTROLANDO"** com o botão **Parar**. No Windows essa janela **não pega o foco do teclado** (`WS_EX_NOACTIVATE`), então Enter e Espaço nunca apertam "Parar" sem querer; no Linux o agente devolve o foco com o `xdotool`;
+  - a tela vai a **~4 quadros/s** e, no Windows, com o cursor desenhado.
+- **Como chega no computador:**
+  - Windows: um PowerShell ajudante aberto só durante o controle (C# compilado na hora: `SendInput` com coordenadas absolutas na área de trabalho inteira, teclas por **scan code** — tecla física, então o ABNT2 sai igual — e texto colado por Unicode; também captura a tela em DPI real).
+  - Linux: `xdotool` (sessão X11).
+  - macOS e celular: indisponível — o Líder vê o aviso e segue só vendo.
+- O agente confere cada evento antes de aplicar (coordenadas de 0 a 1, teclas de uma lista fechada) e, ao terminar, **solta o que ficou apertado**.
+- **Teclas nunca são gravadas** — nem na auditoria. Vai para a auditoria: `dispositivo.controle_pedido`, `controle_autorizado`/`controle_negado` e `controle_encerrado` (com o número de eventos).
+- **Limites do Windows** (iguais aos de qualquer programa sem privilégio de sistema): não controla a tela do **UAC** (área segura) nem janelas abertas **como administrador**, e não manda Ctrl+Alt+Del. Para isso, o agente precisaria rodar como serviço do sistema — fase de produção.
 - Os quadros ficam **só na memória do servidor** (o último de cada aparelho) e são descartados ao encerrar — nunca vão para o banco. Em produção com vários servidores, o caminho é WebRTC ou Redis.
 - Início e fim vão para a auditoria (`dispositivo.tela_iniciada`, `dispositivo.tela_encerrada`).
 - Ver a tela exige `dispositivo:comandar` (Líder e Professor). Aluno recebe 403.

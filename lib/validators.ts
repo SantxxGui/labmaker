@@ -240,11 +240,29 @@ export const dispositivoCreateSchema = z.object({
 export const telaQuadroSchema = z.object({
   acaoId: z.string().min(1).max(40),
   fim: z.boolean().optional(),
+  /** resposta do usuário ao pedido de controle (ou "indisponivel": o sistema não deixa controlar) */
+  controle: z.enum(["aceito", "recusado", "indisponivel"]).optional(),
   /** a tela não mudou desde o último quadro: só mantém a sessão viva */
   mesmo: z.boolean().optional(),
   imagem: z.string().max(4_300_000, "Quadro grande demais (máx. 3 MB).").regex(/^[A-Za-z0-9+/=]+$/, "Imagem em base64 inválida.").optional(),
   tipo: z.enum(["image/jpeg", "image/png"]).default("image/jpeg"),
-}).refine((d) => d.fim || d.mesmo || !!d.imagem, { message: "Envie a imagem, mesmo: true ou fim: true." });
+}).refine((d) => d.fim || d.mesmo || !!d.imagem || !!d.controle, { message: "Envie a imagem, mesmo: true, fim: true ou controle." });
+
+const coord = z.number().finite().min(0).max(1);
+/** Um evento de mouse/teclado do Líder (coordenadas de 0 a 1 sobre a imagem). Ver lib/tela-remota.ts. */
+export const eventoControleSchema = z.discriminatedUnion("t", [
+  z.object({ t: z.literal("m"), x: coord, y: coord }),
+  z.object({ t: z.literal("b"), b: z.union([z.literal(0), z.literal(1), z.literal(2)]), d: z.boolean(), x: coord, y: coord }),
+  z.object({ t: z.literal("w"), dy: z.number().int().min(-20).max(20).refine((v) => v !== 0), x: coord, y: coord }),
+  z.object({ t: z.literal("k"), c: z.string().regex(/^[A-Za-z0-9]{1,24}$/, "Tecla inválida."), d: z.boolean() }),
+  z.object({ t: z.literal("txt"), s: z.string().min(1).max(2000) }),
+]);
+/** Tela do Líder: pedir/devolver o controle, ou um lote de eventos. */
+export const telaControleSchema = z.union([
+  z.object({ acao: z.enum(["pedir", "soltar"]) }),
+  z.object({ eventos: z.array(eventoControleSchema).min(1).max(200) }),
+]);
+export const agenteControleSchema = z.object({ acaoId: z.string().min(1).max(40) });
 
 // ───────────────────────── Atendimento e push (agente) ─────────────────────────
 

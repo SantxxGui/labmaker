@@ -2,7 +2,7 @@
 
 > Gerado por `npm run docs:api` a partir de `lib/openapi.ts`. Versão navegável e testável em **`/api-docs`**; especificação OpenAPI 3.1 em **`/api/openapi.json`**.
 
-**72 operações.** JSON em UTF-8. Erros sempre como `{ "error": "mensagem em português" }`.
+**76 operações.** JSON em UTF-8. Erros sempre como `{ "error": "mensagem em português" }`.
 
 | Código | Quando |
 |---|---|
@@ -75,6 +75,7 @@ Autenticação: cookie `labops_session` (JWT httpOnly) obtido em `POST /api/auth
 | `GET` | `/api/dispositivos/{id}/tela` | Suporte remoto: último pedido e sessão de tela ao vivo | `dispositivo:comandar` |
 | `GET` | `/api/dispositivos/{id}/tela/imagem` | Último quadro da tela compartilhada (JPEG/PNG) | `dispositivo:comandar` |
 | `POST` | `/api/dispositivos/{id}/tela/encerrar` | Encerrar o compartilhamento de tela | `dispositivo:comandar` |
+| `POST` | `/api/dispositivos/{id}/tela/controle` | Controle remoto: `{ acao: "pedir" \| "soltar" }` ou `{ eventos: [...] }` (mouse, roda, teclas físicas, colar texto) | `dispositivo:comandar` |
 | `GET` | `/api/dispositivos/{id}/tela/eventos` | Tela ao vivo por Server-Sent Events (estado, quadro, início, fim; pulso a cada 15 s) | `dispositivo:comandar` |
 | `GET` | `/api/politicas` | Políticas de uso | `dispositivo:ver` |
 | `PATCH` | `/api/politicas/{id}` | Alterar política (downloads, USB, sites, apps) | `dispositivo:politicas` |
@@ -104,7 +105,8 @@ Autenticação: cookie `labops_session` (JWT httpOnly) obtido em `POST /api/auth
 | `POST` | `/api/agente/chamados/cancelar` | Cancelar o próprio pedido de ajuda (resolveu sozinho) | token do agente |
 | `GET` | `/api/agente/push` | Chave pública VAPID para a inscrição Web Push | público |
 | `POST` | `/api/agente/push` | Salvar (ou apagar com null) a inscrição Web Push do aparelho | token do agente |
-| `POST` | `/api/agente/tela` | Envia um quadro da tela depois que o usuário autorizou o suporte remoto (ou fim: true) | token do agente |
+| `POST` | `/api/agente/tela` | Envia um quadro da tela depois que o usuário autorizou o suporte remoto (ou fim: true, ou a resposta ao pedido de controle) | token do agente |
+| `POST` | `/api/agente/tela/controle` | Busca os eventos de mouse/teclado do Líder (espera longa de até 20 s) | token do agente |
 
 ## Atendimento
 
@@ -146,6 +148,6 @@ Autenticação: cookie `labops_session` (JWT httpOnly) obtido em `POST /api/auth
 B=http://localhost:3000
 curl -c c.txt -X POST $B/api/auth/login -H 'Content-Type: application/json' -d '{"email":"lider@labmaker.dev","senha":"labmaker123"}'
 curl -b c.txt $B/api/equipamentos
-npm run test:api           # 133 verificações ponta a ponta
+npm run test:api           # 150 verificações ponta a ponta
 npm run test:concorrencia  # 50 pedidos simultâneos → 1 reserva
 ```

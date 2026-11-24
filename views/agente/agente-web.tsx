@@ -425,6 +425,10 @@ export function AgenteWeb({ codigoInicial }: { codigoInicial: string }) {
       if (blob) {
         const r = await fetch("/api/agente/tela", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${c.token}` }, body: JSON.stringify({ acaoId: a.id, imagem: await blobParaBase64(blob), tipo: "image/jpeg" }) }).then((x) => x.json()).catch(() => ({ continuar: true }));
         if (!r.continuar) continuar = false;
+        // pelo navegador não dá para mexer no mouse/teclado: responde na hora para o Líder não ficar esperando
+        if (r.controle === "pedido") {
+          await fetch("/api/agente/tela", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${c.token}` }, body: JSON.stringify({ acaoId: a.id, controle: "indisponivel" }) }).catch(() => {});
+        }
       }
       await new Promise((res) => setTimeout(res, Math.max(150, 1000 - (Date.now() - t0))));
     }
@@ -609,7 +613,7 @@ export function AgenteWeb({ codigoInicial }: { codigoInicial: string }) {
           <div className="w-full max-w-sm rounded-2xl border border-line-strong bg-surface p-6">
             <p className="flex items-center gap-2 text-[12px] font-medium uppercase tracking-wide text-signal"><MonitorUp className="size-4" />Pedido de suporte remoto</p>
             <h2 className="mt-3 text-lg font-semibold">O Líder quer ver sua tela</h2>
-            <p className="mt-2 text-[14px] text-muted">Motivo: {pedidoTela.justificativa ?? "—"}. Só visualização, no máximo 10 minutos; você pode parar quando quiser.</p>
+            <p className="mt-2 text-[14px] text-muted">Motivo: {pedidoTela.justificativa ?? "—"}. Só visualização, no máximo 30 minutos; você pode parar quando quiser.</p>
             <div className="mt-6 grid grid-cols-2 gap-2">
               <button onClick={() => compartilharTela(false)} className="h-11 rounded-xl border border-line-strong text-[14px]">Recusar</button>
               <button onClick={() => compartilharTela(true)} className="h-11 rounded-xl bg-white text-[14px] font-medium text-zinc-950">Compartilhar</button>
