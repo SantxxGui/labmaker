@@ -3,7 +3,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { hojeNoLab, horarioLocal } from "@/lib/slots";
 import { toAgendamentoDTO } from "@/lib/serializers";
-import type { AgendamentoDTO } from "@/lib/types";
+import type { AgendamentoDTO, StatusAgendamento, TipoEquipamento } from "@/lib/types";
 
 const select = {
   id: true, inicio: true, fim: true, status: true, finalidade: true,
@@ -11,20 +11,43 @@ const select = {
 } as const;
 const selectComUsuario = { ...select, usuario: { select: { id: true, nome: true, email: true } } } as const;
 
+/** Uma linha do SELECT com JOIN de listarProximos (colunas achatadas, como o Postgres devolve). */
+type LinhaReservaComJoin = {
+  id: string; inicio: Date; fim: Date; status: StatusAgendamento; finalidade: string | null;
+  equipamento_id: string; equipamento_nome: string; equipamento_tipo: TipoEquipamento; laboratorio_codigo: string;
+  usuario_id: string; usuario_nome: string; usuario_email: string;
+};
+
 export type ResultadoCriacao =
   | { ok: true; agendamento: AgendamentoDTO }
   | { ok: false; motivo: "conflito" | "conflito_proprio" | "limite" | "choque_usuario" };
 
 export const AgendamentoModel = {
-  /** Próximas reservas confirmadas de todos (visão de gestão). */
+  /**
+   * Próximas reservas confirmadas de todos (visão de gestão): UMA consulta com INNER JOIN
+   * — cada reserva já volta com o nome de quem reservou e da máquina (sem isso o Prisma faria
+   * três SELECTs separados). Os valores vão como parâmetros ($1), nunca colados no SQL.
+   */
   async listarProximos(limit = 100) {
-    const rows = await prisma.agendamento.findMany({
-      where: { status: "CONFIRMADO", fim: { gte: new Date() } },
-      orderBy: { inicio: "asc" },
-      take: limit,
-      select: selectComUsuario,
-    });
-    return rows.map(toAgendamentoDTO);
+    const rows = await prisma.$queryRaw<LinhaReservaComJoin[]>`
+      SELECT a.id, a.inicio, a.fim, a.status::text AS status, a.finalidade,
+             e.id AS equipamento_id, e.nome AS equipamento_nome, e.tipo::text AS equipamento_tipo,
+             l.codigo AS laboratorio_codigo,
+             u.id AS usuario_id, u.nome AS usuario_nome, u.email AS usuario_email
+        FROM agendamentos a
+        INNER JOIN usuarios u     ON u.id = a.usuario_id
+        INNER JOIN equipamentos e ON e.id = a.equipamento_id
+        INNER JOIN laboratorios l ON l.id = e.laboratorio_id
+       WHERE a.status = 'CONFIRMADO' AND a.fim >= NOW()
+       ORDER BY a.inicio ASC
+       LIMIT ${limit}`;
+    return rows.map((r) =>
+      toAgendamentoDTO({
+        id: r.id, inicio: r.inicio, fim: r.fim, status: r.status, finalidade: r.finalidade,
+        equipamento: { id: r.equipamento_id, nome: r.equipamento_nome, tipo: r.equipamento_tipo, laboratorio: { codigo: r.laboratorio_codigo } },
+        usuario: { id: r.usuario_id, nome: r.usuario_nome, email: r.usuario_email },
+      }),
+    );
   },
 
   /** Próximas reservas confirmadas de um usuário. */
